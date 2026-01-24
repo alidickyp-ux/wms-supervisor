@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { RefreshCw, Search, FileSpreadsheet, Trash2, Database, LogOut, Upload, Send } from 'lucide-react';
+import { RefreshCw, Search, FileSpreadsheet, Trash2, Database, LogOut, Upload } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 
@@ -39,11 +39,25 @@ function App() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const targetMap = { 'Master Lokasi': 'master', 'Snapshoot': 'snapshot_list', '1st Count': 'first', '2nt Count': 'second', 'Reconciliation': 'recon' };
+      const targetMap = { 
+        'Master Lokasi': 'master', 
+        'Snapshoot': 'snapshot_list', 
+        '1st Count': 'first', 
+        '2nt Count': 'second', 
+        'Reconciliation': 'recon' 
+      };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(res.data.data || []);
     } catch (e) { setData([]); }
     finally { setLoading(false); }
+  };
+
+  const handleToggle = async (uid, current) => {
+    const nextStatus = current === 'open' ? 'closed' : 'open';
+    try {
+      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
+      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
+    } catch (e) { alert("Gagal update status!"); }
   };
 
   const handleSaveMobile = async () => {
@@ -52,20 +66,23 @@ function App() {
     try {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: mobLoc,
-        artikel: mobLoc, // Misal artikel sama dengan lokasi atau sesuaikan
+        artikel: mobLoc, 
         qty: mobQty,
         operator: user.username,
         target_table: activeMenu
       });
       alert("Data Tersimpan!");
       setMobLoc(''); setMobQty('');
+      fetchData();
     } catch (e) { alert("Gagal Simpan!"); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  const filtered = data.filter(item => Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase())));
+  const filtered = data.filter(item => 
+    Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   if (!isLoggedIn) {
     return (
@@ -94,16 +111,32 @@ function App() {
         ))}
       </div>
 
-      {/* MAIN */}
+      {/* MAIN CONTENT */}
       <div style={{ flex: 1, padding: isMobile ? '15px' : '25px 40px', marginLeft: isMobile ? '60px' : '200px' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h1 style={{ fontSize: '0.8rem', fontWeight: '800' }}>{activeMenu.toUpperCase()}</h1>
-          <div style={{ display: 'flex', gap: '5px' }}>
-            <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
-          </div>
+          <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
         </header>
 
-        {isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count') ? (
+        {/* LOGIC TAMPILAN */}
+        {activeMenu === 'Master Lokasi' ? (
+          /* MASTER LOKASI TETAP GRID */
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '80px' : '100px'}, 1fr))`, gap: '10px' }}>
+            {filtered.map((row) => (
+              <div key={row.unique_id} style={{ border: '1px solid #eee', padding: '15px 10px', borderRadius: '2px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontWeight: '700', fontSize: '0.75rem' }}>{row.unique_id}</span>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={{ 
+                  width: '30px', height: '14px', borderRadius: '10px', 
+                  backgroundColor: row.assign === 'open' ? '#000' : '#eee', 
+                  position: 'relative', cursor: 'pointer' 
+                }}>
+                  <div style={{ width: '10px', height: '10px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '2px', left: row.assign === 'open' ? '18px' : '2px', transition: '0.2s' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count') ? (
+          /* INPUT MOBILE */
           <div style={{ background: '#fff', border: '1px solid #eee', padding: '20px', borderRadius: '4px' }}>
             <label style={mLabel}>LOKASI / ARTIKEL</label>
             <input value={mobLoc} onChange={e => setMobLoc(e.target.value)} style={mInput} placeholder="Scan..." />
@@ -112,6 +145,7 @@ function App() {
             <button onClick={handleSaveMobile} style={{ ...btnBlack, width: '100%', padding: '15px', marginTop: '10px' }}>SIMPAN DATA</button>
           </div>
         ) : (
+          /* TABEL PC & RECONCILIATION */
           <div style={{ border: '1px solid #eee', borderRadius: '2px', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' }}>
               <thead>
@@ -130,9 +164,16 @@ function App() {
                     <td style={td}>{row.location_id || row.unique_id}</td>
                     <td style={td}>{row.artikel}</td>
                     {activeMenu === 'Reconciliation' ? (
-                      <><td style={td}>{row.qty_snap}</td><td style={td}>{row.qty_1st}</td><td style={td}>{row.qty_2nd}</td><td style={{ ...td, color: 'red', fontWeight: '800' }}>{(row.qty_1st + row.qty_2nd) - row.qty_snap}</td></>
+                      <>
+                        <td style={td}>{row.qty_snap}</td>
+                        <td style={td}>{row.qty_1st}</td>
+                        <td style={td}>{row.qty_2nd}</td>
+                        <td style={{ ...td, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'inherit', fontWeight: '800' }}>
+                          {(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}
+                        </td>
+                      </>
                     ) : <td style={td}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
-                    <td style={{ ...td, color: '#999', fontStyle: 'italic' }}>{row.description || '-'}</td>
+                    <td style={{ ...td, color: '#999', fontStyle: 'italic', minWidth: '150px' }}>{row.description || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -144,10 +185,11 @@ function App() {
   );
 }
 
+// STYLES
 const loginInput = { padding: '8px', border: '1px solid #eee', outline: 'none', fontSize: '0.8rem', fontFamily: 'Lexend' };
 const btnBlack = { background: '#000', color: '#fff', border: 'none', padding: '8px 20px', cursor: 'pointer', fontWeight: '700', fontFamily: 'Lexend' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '5px', cursor: 'pointer' };
-const th = { padding: '10px', textAlign: 'left', color: '#999', fontSize: '0.65rem' };
+const th = { padding: '10px', textAlign: 'left', color: '#999', fontSize: '0.65rem', textTransform: 'uppercase' };
 const td = { padding: '10px', color: '#333' };
 const mLabel = { fontSize: '0.6rem', color: '#999', display: 'block', marginBottom: '5px', fontWeight: '700' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '15px', outline: 'none', fontFamily: 'Lexend', boxSizing: 'border-box' };
