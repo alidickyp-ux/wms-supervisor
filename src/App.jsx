@@ -243,6 +243,7 @@ function App() {
                     <tr style={{ borderBottom: '1px solid #eee', backgroundColor: '#fafafa' }}>
                       <th style={th}>LOCATION</th>
                       <th style={th}>ARTIKEL</th>
+                      <th style={th}>DESCRIPTION</th>
                       {activeMenu === 'Reconciliation' ? (
                         <>
                           <th style={th}>SNAP</th>
