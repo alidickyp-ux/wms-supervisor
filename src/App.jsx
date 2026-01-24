@@ -15,6 +15,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Form Mobile State
   const [mobLoc, setMobLoc] = useState('');
   const [mobQty, setMobQty] = useState('');
 
@@ -39,11 +40,8 @@ function App() {
     setLoading(true);
     try {
       const targetMap = { 
-        'Master Lokasi': 'master', 
-        'Snapshoot': 'snapshot_list', 
-        '1st Count': 'first', 
-        '2nt Count': 'second', 
-        'Reconciliation': 'recon' 
+        'Master Lokasi': 'master', 'Snapshoot': 'snapshot_list', 
+        '1st Count': 'first', '2nt Count': 'second', 'Reconciliation': 'recon' 
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(res.data.data || []);
@@ -64,11 +62,8 @@ function App() {
     setLoading(true);
     try {
       await axios.post(`${API_BASE}?action=save_input`, {
-        location_id: mobLoc,
-        artikel: mobLoc, 
-        qty: mobQty,
-        operator: user.username,
-        target_table: activeMenu
+        location_id: mobLoc, artikel: mobLoc, qty: mobQty,
+        operator: user.username, target_table: activeMenu
       });
       alert("Data Tersimpan!");
       setMobLoc(''); setMobQty('');
@@ -77,17 +72,49 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const handleRefreshView = async () => {
+    setLoading(true);
+    try { await axios.post(`${API_BASE}?action=refresh_view`); alert("Refresh Berhasil!"); fetchData(); } 
+    catch (e) { alert("Gagal!"); } finally { setLoading(false); }
+  };
+
+  const handleClearSnap = async () => {
+    if (!window.confirm("Hapus SEMUA snapshot?")) return;
+    setLoading(true);
+    try { await axios.post(`${API_BASE}?action=clear_snap`); fetchData(); } 
+    catch (e) { alert("Gagal!"); } finally { setLoading(false); }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      setLoading(true);
+      try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
+      catch (e) { alert("Gagal!"); } finally { setLoading(false); }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleExportExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Data");
+    XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
+  };
+
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
   const filtered = data.filter(item => 
     Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const globalStyle = { fontFamily: "'Lexend', sans-serif" };
-
   if (!isLoggedIn) {
     return (
-      <div style={{ ...globalStyle, height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+      <div style={{ fontFamily: 'Lexend', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <h2 style={{ textAlign: 'center', fontSize: '1rem', fontWeight: '800' }}>COOL SYSTEM</h2>
           <input placeholder="User ID" value={username} onChange={e => setUsername(e.target.value)} style={loginInput} />
@@ -99,77 +126,70 @@ function App() {
   }
 
   return (
-    <div style={{ ...globalStyle, display: 'flex', minHeight: '100vh', backgroundColor: '#fff' }}>
+    <div style={{ fontFamily: 'Lexend', display: 'flex', minHeight: '100vh', backgroundColor: '#fff' }}>
       {/* SIDEBAR */}
       <div style={{ width: isMobile ? '60px' : '200px', borderRight: '1px solid #eee', padding: '20px 0', position: 'fixed', height: '100vh' }}>
-        <div style={{ padding: '0 15px 20px' }}>
-          <h2 style={{ fontSize: '0.8rem', fontWeight: '800' }}>{isMobile ? 'C' : 'COOL'}</h2>
-        </div>
+        <div style={{ padding: '0 15px 20px' }}><h2 style={{ fontSize: '0.8rem', fontWeight: '800' }}>{isMobile ? 'C' : 'COOL'}</h2></div>
         {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
           <div key={m} onClick={() => setActiveMenu(m)} style={{ padding: '12px 15px', cursor: 'pointer', fontSize: '0.7rem', color: activeMenu === m ? '#000' : '#888', fontWeight: activeMenu === m ? '700' : '400', borderLeft: activeMenu === m ? '3px solid #000' : '3px solid transparent' }}>
             {isMobile ? m.charAt(0) : m}
           </div>
         ))}
-        <button onClick={() => setIsLoggedIn(false)} style={{ border: 'none', background: 'none', color: '#ff4d4f', padding: '15px', fontSize: '0.7rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #eee', position: 'absolute', bottom: 0, width: '100%' }}>
+        <button onClick={() => setIsLoggedIn(false)} style={{ border: 'none', background: 'none', color: '#ff4d4f', padding: '15px', fontSize: '0.7rem', fontWeight: '600', cursor: 'pointer', position: 'absolute', bottom: 0, width: '100%', display: 'flex', alignItems: 'center', gap: '5px' }}>
           <LogOut size={14} /> {!isMobile && 'Logout'}
         </button>
       </div>
 
-      {/* MAIN CONTENT */}
       <div style={{ flex: 1, padding: isMobile ? '15px' : '25px 40px', marginLeft: isMobile ? '60px' : '200px' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h1 style={{ fontSize: '0.8rem', fontWeight: '800' }}>{activeMenu.toUpperCase()}</h1>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* BUTTONS PC ONLY */}
+            {!isMobile && activeMenu === 'Snapshoot' && (
+              <>
+                <button onClick={handleClearSnap} style={btnWhite}><Trash2 size={12}/> HAPUS</button>
+                <button onClick={handleRefreshView} style={btnWhite}><Database size={12}/> REFRESH VIEW</button>
+                <label style={{ ...btnWhite, backgroundColor: '#000', color: '#fff' }}>
+                  <Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} />
+                </label>
+              </>
+            )}
+            {!isMobile && ['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
+              <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT</button>
+            )}
             <div style={{ position: 'relative' }}>
-               <Search size={14} style={{ position: 'absolute', left: '10px', top: '9px', color: '#ccc' }} />
-               <input placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '7px 10px 7px 30px', border: '1px solid #eee', borderRadius: '4px', fontSize: '0.7rem', width: isMobile ? '80px' : '150px', outline: 'none' }} />
+               <Search size={14} style={{ position: 'absolute', left: '8px', top: '8px', color: '#ccc' }} />
+               <input placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={searchInput} />
             </div>
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>
         </header>
 
         {activeMenu === 'Master Lokasi' ? (
-          /* GRID MASTER LOKASI DENGAN TOGGLE */
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '80px' : '110px'}, 1fr))`, gap: '12px' }}>
             {filtered.map((row) => (
-              <div key={row.unique_id} style={{ border: '1px solid #eee', padding: '15px 10px', borderRadius: '4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', backgroundColor: '#fff' }}>
-                <span style={{ fontWeight: '800', fontSize: '0.75rem', color: '#333' }}>{row.unique_id}</span>
-                {/* TOMBOL TOGGLE GRID */}
-                <div 
-                  onClick={() => handleToggle(row.unique_id, row.assign)} 
-                  style={{ 
-                    width: '34px', height: '18px', borderRadius: '20px', 
-                    backgroundColor: row.assign === 'open' ? '#000' : '#e5e5e5', 
-                    position: 'relative', cursor: 'pointer', transition: '0.3s' 
-                  }}
-                >
-                  <div style={{ 
-                    width: '12px', height: '12px', background: '#fff', borderRadius: '50%', 
-                    position: 'absolute', top: '3px', 
-                    left: row.assign === 'open' ? '18px' : '4px', 
-                    transition: '0.3s' 
-                  }} />
+              <div key={row.unique_id} style={cardGrid}>
+                <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id}</span>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={{ width: '30px', height: '16px', borderRadius: '10px', backgroundColor: row.assign === 'open' ? '#000' : '#eee', position: 'relative', cursor: 'pointer' }}>
+                  <div style={{ width: '10px', height: '10px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: row.assign === 'open' ? '17px' : '3px', transition: '0.2s' }} />
                 </div>
               </div>
             ))}
           </div>
         ) : isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count') ? (
-          /* FORM INPUT HP */
-          <div style={{ background: '#fff', border: '1px solid #eee', padding: '20px', borderRadius: '4px' }}>
+          <div style={mobileForm}>
             <label style={mLabel}>LOKASI / ARTIKEL</label>
             <input value={mobLoc} onChange={e => setMobLoc(e.target.value)} style={mInput} placeholder="Scan..." />
             <label style={mLabel}>QTY</label>
-            <input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={{ ...mInput, fontSize: '1.8rem', fontWeight: '800', textAlign: 'center' }} />
-            <button onClick={handleSaveMobile} style={{ ...btnBlack, width: '100%', padding: '16px', marginTop: '10px', fontSize: '0.8rem' }}>SIMPAN DATA</button>
+            <input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={{ ...mInput, fontSize: '1.5rem', fontWeight: '800', textAlign: 'center' }} />
+            <button onClick={handleSaveMobile} style={btnMobileSave}>SIMPAN DATA</button>
           </div>
         ) : (
-          /* TABEL PC & RECON */
-          <div style={{ border: '1px solid #eee', borderRadius: '2px', overflowX: 'auto' }}>
+          <div style={tableContainer}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' }}>
               <thead>
                 <tr style={{ backgroundColor: '#fafafa', borderBottom: '1px solid #eee' }}>
-                  <th style={th}>LOCATION</th>
-                  <th style={th}>ARTIKEL</th>
+                  <th style={th}>LOCATION</th><th style={th}>ARTIKEL</th>
                   {activeMenu === 'Reconciliation' ? (
                     <><th style={th}>SNAP</th><th style={th}>1ST</th><th style={th}>2ND</th><th style={th}>DIFF</th></>
                   ) : <th style={th}>QTY</th>}
@@ -182,16 +202,12 @@ function App() {
                     <td style={td}>{row.location_id || row.unique_id}</td>
                     <td style={td}>{row.artikel}</td>
                     {activeMenu === 'Reconciliation' ? (
-                      <>
-                        <td style={td}>{row.qty_snap}</td>
-                        <td style={td}>{row.qty_1st}</td>
-                        <td style={td}>{row.qty_2nd}</td>
+                      <><td style={td}>{row.qty_snap}</td><td style={td}>{row.qty_1st}</td><td style={td}>{row.qty_2nd}</td>
                         <td style={{ ...td, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'inherit', fontWeight: '800' }}>
                           {(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}
-                        </td>
-                      </>
+                        </td></>
                     ) : <td style={td}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
-                    <td style={{ ...td, color: '#999', fontStyle: 'italic', minWidth: '150px' }}>{row.description || '-'}</td>
+                    <td style={{ ...td, color: '#999', fontStyle: 'italic' }}>{row.description || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -203,12 +219,19 @@ function App() {
   );
 }
 
-const loginInput = { padding: '10px', border: '1px solid #eee', outline: 'none', fontSize: '0.8rem', fontFamily: 'Lexend', borderRadius: '4px' };
-const btnBlack = { background: '#000', color: '#fff', border: 'none', padding: '10px 20px', cursor: 'pointer', fontWeight: '700', fontFamily: 'Lexend', borderRadius: '4px' };
-const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '7px', cursor: 'pointer', borderRadius: '4px', display: 'flex', alignItems: 'center' };
-const th = { padding: '12px 10px', textAlign: 'left', color: '#999', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.5px' };
+// STYLES - TETAP CLEAN WHITE & LEXEND [Saved Information]
+const loginInput = { padding: '8px', border: '1px solid #eee', outline: 'none', fontSize: '0.8rem', fontFamily: 'Lexend', borderRadius: '2px' };
+const btnBlack = { background: '#000', color: '#fff', border: 'none', padding: '8px 20px', cursor: 'pointer', fontWeight: '700', fontFamily: 'Lexend', borderRadius: '2px' };
+const btnWhite = { display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', border: '1px solid #eee', background: '#fff', borderRadius: '4px', fontSize: '0.65rem', fontWeight: '700', cursor: 'pointer', fontFamily: 'Lexend' };
+const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', cursor: 'pointer', borderRadius: '4px' };
+const searchInput = { padding: '6px 10px 6px 28px', border: '1px solid #eee', borderRadius: '4px', fontSize: '0.7rem', width: '120px', outline: 'none', fontFamily: 'Lexend' };
+const cardGrid = { border: '1px solid #eee', padding: '15px 10px', borderRadius: '2px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' };
+const th = { padding: '12px 10px', textAlign: 'left', color: '#999', fontSize: '0.6rem', textTransform: 'uppercase' };
 const td = { padding: '12px 10px', color: '#333' };
-const mLabel = { fontSize: '0.6rem', color: '#999', display: 'block', marginBottom: '8px', fontWeight: '700', textTransform: 'uppercase' };
-const mInput = { width: '100%', padding: '14px', border: '1px solid #eee', marginBottom: '15px', outline: 'none', fontFamily: 'Lexend', boxSizing: 'border-box', borderRadius: '4px', backgroundColor: '#fcfcfc' };
+const mLabel = { fontSize: '0.6rem', color: '#999', display: 'block', marginBottom: '5px', fontWeight: '700' };
+const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '15px', outline: 'none', fontFamily: 'Lexend', boxSizing: 'border-box', borderRadius: '4px' };
+const btnMobileSave = { width: '100%', padding: '15px', background: '#000', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: '700', fontFamily: 'Lexend' };
+const mobileForm = { background: '#fff', border: '1px solid #eee', padding: '20px', borderRadius: '4px', maxWidth: '400px', margin: '0 auto' };
+const tableContainer = { border: '1px solid #eee', borderRadius: '2px', overflowX: 'auto' };
 
 export default App;
