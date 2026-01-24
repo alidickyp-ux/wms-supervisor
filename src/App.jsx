@@ -16,7 +16,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- Tambahan State Deteksi HP/PC ---
+  // --- DETEKSI LAYAR HP/PC ---
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => {
@@ -139,7 +139,7 @@ function App() {
 
   return (
     <div style={{ ...globalStyle, display: 'flex', minHeight: '100vh', backgroundColor: '#fff' }}>
-      {/* SIDEBAR - Sembunyi di HP kalau mau lebih clean, tapi di sini saya biarkan dulu */}
+      {/* SIDEBAR */}
       <div style={{ width: isMobile ? '60px' : '200px', borderRight: '1px solid #eee', padding: '20px 0', position: 'fixed', height: '100vh', display: 'flex', flexDirection: 'column', transition: '0.3s' }}>
         <div style={{ padding: '0 15px 20px 15px', borderBottom: '1px solid #f5f5f5', marginBottom: '15px' }}>
           <h2 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#000', margin: 0 }}>{isMobile ? 'C' : 'COOL'}</h2>
@@ -151,7 +151,7 @@ function App() {
             <div key={m} onClick={() => setActiveMenu(m)} style={{ 
               padding: '10px 15px', cursor: 'pointer', 
               color: activeMenu === m ? '#000' : '#888', 
-              fontSize: '0.7rem', fontWeight: activeMenu === m ? '700' : '500',
+              fontSize: '0.75rem', fontWeight: activeMenu === m ? '700' : '500',
               borderLeft: activeMenu === m ? '3px solid #000' : '3px solid transparent',
               backgroundColor: activeMenu === m ? '#fafafa' : 'transparent',
               marginBottom: '2px', overflow: 'hidden', whiteSpace: 'nowrap'
@@ -164,13 +164,11 @@ function App() {
         </button>
       </div>
 
-      {/* MAIN CONTENT AREA */}
       <div style={{ flex: 1, padding: isMobile ? '20px' : '25px 40px', marginLeft: isMobile ? '60px' : '200px' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
           <h1 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#000' }}>{activeMenu.toUpperCase()}</h1>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             
-            {/* Action Buttons PC Only */}
             {!isMobile && activeMenu === 'Snapshoot' && (
               <>
                 <button onClick={handleClearSnap} style={btnAction}><Trash2 size={12}/> HAPUS</button>
@@ -197,9 +195,7 @@ function App() {
           </div>
         </header>
 
-        {/* --- DUAL VIEW LOGIC --- */}
         {(activeMenu === '1st Count' || activeMenu === '2nt Count') && isMobile ? (
-          /* TAMPILAN HP: FORM INPUT */
           <div style={{ maxWidth: '400px', margin: '0 auto' }}>
             <div style={{ background: '#fff', border: '1px solid #eee', padding: '25px', borderRadius: '2px' }}>
               <div style={{ marginBottom: '20px' }}>
@@ -216,7 +212,6 @@ function App() {
             </div>
           </div>
         ) : (
-          /* TAMPILAN PC / MENU LAIN: TABEL/GRID */
           <div style={{ border: (activeMenu === 'Master Lokasi' && isMobile) ? 'none' : '1px solid #eee', borderRadius: '2px' }}>
             {activeMenu === 'Master Lokasi' ? (
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '80px' : '100px'}, 1fr))`, gap: '10px' }}>
@@ -243,7 +238,6 @@ function App() {
                     <tr style={{ borderBottom: '1px solid #eee', backgroundColor: '#fafafa' }}>
                       <th style={th}>LOCATION</th>
                       <th style={th}>ARTIKEL</th>
-                      <th style={th}>DESCRIPTION</th>
                       {activeMenu === 'Reconciliation' ? (
                         <>
                           <th style={th}>SNAP</th>
@@ -252,7 +246,7 @@ function App() {
                           <th style={th}>SELISIH</th>
                         </>
                       ) : <th style={th}>QTY</th>}
-                      <th style={th}>STATUS</th>
+                      <th style={th}>DESCRIPTION</th> {/* KOLOM TERAKHIR */}
                     </tr>
                   </thead>
                   <tbody>
@@ -265,12 +259,14 @@ function App() {
                             <td style={td}>{row.qty_snap}</td>
                             <td style={td}>{row.qty_1st}</td>
                             <td style={td}>{row.qty_2nd}</td>
-                            <td style={{ ...td, color: (row.qty_1st + row.qty_2nd - row.qty_snap) !== 0 ? 'red' : 'inherit', fontWeight: 'bold' }}>
-                              {(row.qty_1st + row.qty_2nd) - row.qty_snap}
+                            <td style={{ ...td, color: (Number(row.qty_1st || 0) + Number(row.qty_2nd || 0) - Number(row.qty_snap || 0)) !== 0 ? 'red' : 'inherit', fontWeight: 'bold' }}>
+                              {(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}
                             </td>
                           </>
                         ) : <td style={td}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
-                        <td style={{ ...td, fontWeight: '700' }}>{row.final_status || (row.assign === 'open' ? 'OPEN' : 'CLOSED')}</td>
+                        <td style={{ ...td, color: '#888', fontStyle: 'italic', minWidth: '150px' }}>
+                           {row.description || '-'} 
+                        </td>
                       </tr>
                     ))}
                   </tbody>
