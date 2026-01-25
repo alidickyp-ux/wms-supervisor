@@ -12,15 +12,14 @@ function App() {
   const [password, setPassword] = useState('');
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [data, setData] = useState([]);
-  const [snapData, setSnapData] = useState([]); // Referensi kamus artikel di lokasi
+  const [snapData, setSnapData] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- State Form Operasional ---
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
-  const [locInfo, setLocInfo] = useState(null); // Menampung array artikel (Multi-Article)
+  const [locInfo, setLocInfo] = useState(null); 
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -53,16 +52,16 @@ function App() {
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  // --- LOGIC SCAN 1ST COUNT: Multi-Article ---
+  // --- LOGIC SCAN 1ST COUNT: Multi-Article & No Auto-Fill ---
   const handleScan1st = (val) => {
     const cleanVal = val.trim().toUpperCase();
     setMobLoc(cleanVal);
     
-    // Cari SEMUA artikel di lokasi ini dari kamus snapData
+    // Cari SEMUA artikel di lokasi ini (Multi-Article)
     const articlesInLoc = snapData.filter(d => String(d.location_id).trim().toUpperCase() === cleanVal);
     
     if (articlesInLoc.length > 0) {
-      setLocInfo(articlesInLoc); // Simpan array untuk di-map di Box Content
+      setLocInfo(articlesInLoc); 
     } else {
       setLocInfo(null);
     }
@@ -76,18 +75,17 @@ function App() {
     } catch (e) { alert("Gagal update status!"); }
   };
 
-  // --- LOGIC SIMPAN: Anti-Double & Dynamic Table ---
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return alert("Isi semua form, Bos!");
 
-    // Validasi Anti-Double Input di 1st Count
+    // Validasi Anti-Double Input di 1st Count (Pair: Loc + Art)
     if (activeMenu === '1st Count') {
       const isAlreadySaved = data.some(d => 
         String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && 
         String(d.artikel).toUpperCase() === mobArt.trim().toUpperCase()
       );
       if (isAlreadySaved) {
-        return alert(`Gagal! Artikel ${mobArt} sudah pernah di-input di lokasi ${mobLoc}.`);
+        return alert(`Gagal! Artikel ${mobArt} sudah ada di lokasi ${mobLoc}.`);
       }
     }
     
@@ -111,7 +109,6 @@ function App() {
     } finally { setLoading(false); }
   };
 
-  // --- Actions ---
   const handleRefreshView = async () => {
     setLoading(true);
     try { await axios.post(`${API_BASE}?action=refresh_view`); alert("View Diperbarui!"); fetchData(); } 
@@ -129,7 +126,9 @@ function App() {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       setLoading(true);
       try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
       catch (e) { alert("Gagal upload!"); } finally { setLoading(false); }
@@ -215,9 +214,12 @@ function App() {
               <div style={boxContent}>
                 <div style={boxTitle}>TARGET DI LOKASI INI ({mobLoc}):</div>
                 {locInfo.map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', padding: '5px 0' }}>
-                    <span>{item.artikel}</span>
-                    <span>Snap: <b>{item.qty_snap}</b></span>
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #ddd', padding: '5px 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Art: <b>{item.artikel}</b></span>
+                        <span>Snap: <b>{item.qty_snap}</b></span>
+                    </div>
+                    <div style={{ fontSize: '0.55rem', fontStyle: 'italic', color: '#666' }}>{item.description}</div>
                   </div>
                 ))}
               </div>
@@ -252,9 +254,13 @@ function App() {
                 <button onClick={() => setSelectedLoc2nd(null)} style={btnBack}>← Kembali ke List</button>
                 <div style={boxContent}>
                   <div style={boxTitle}>BOX CONTENT (REFERENSI 2ND)</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    <span>Art Snap: <b>{selectedLoc2nd.artikel}</b></span>
-                    <span>1st Qty: <b>{selectedLoc2nd.qty_1st}</b></span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span>Artikel: <b>{selectedLoc2nd.artikel}</b></span>
+                    <span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
+                        <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span>
+                        <span style={{ color: 'red' }}>1st: <b>{selectedLoc2nd.qty_1st}</b></span>
+                    </div>
                   </div>
                 </div>
                 <label style={labelStyle}>VALIDASI LOCATION ID</label>
@@ -273,14 +279,49 @@ function App() {
           <div style={tableWrapper}>
             <table style={tableStyle}>
               <thead>
-                <tr style={{ backgroundColor: '#fafafa' }}><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>{activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th></> : <th style={thStyle}>QTY</th>}<th style={thStyle}>DESCRIPTION</th></tr>
+                <tr style={{ backgroundColor: '#fafafa' }}>
+                  <th style={thStyle}>LOKASI</th>
+                  <th style={thStyle}>ARTIKEL</th>
+                  {activeMenu === 'Reconciliation' ? (
+                    <>
+                        <th style={thStyle}>SNAP</th>
+                        <th style={thStyle}>1ST</th>
+                        <th style={thStyle}>2ND</th>
+                        <th style={thStyle}>DIFF</th>
+                        <th style={thStyle}>STATUS</th>
+                    </>
+                  ) : <th style={thStyle}>QTY</th>}
+                  <th style={thStyle}>DESCRIPTION</th>
+                </tr>
               </thead>
               <tbody>
                 {filtered.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
                     <td style={tdStyle}>{row.location_id || row.unique_id}</td>
                     <td style={tdStyle}>{row.artikel}</td>
-                    {activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{ ...tdStyle, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'green', fontWeight: '800' }}>{(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}</td></> : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
+                    {activeMenu === 'Reconciliation' ? (
+                      <>
+                        <td style={tdStyle}>{row.qty_snap}</td>
+                        <td style={tdStyle}>{row.qty_1st}</td>
+                        <td style={tdStyle}>{row.qty_2nd}</td>
+                        <td style={{ ...tdStyle, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'green', fontWeight: '800' }}>
+                            {(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}
+                        </td>
+                        <td style={tdStyle}>
+                            <span style={{ 
+                                padding: '2px 6px', 
+                                borderRadius: '4px', 
+                                fontSize: '0.6rem',
+                                fontWeight: '800',
+                                backgroundColor: row.final_status === 'MATCH' ? '#e6fffa' : '#fff5f5',
+                                color: row.final_status === 'MATCH' ? '#319795' : '#e53e3e',
+                                border: `1px solid ${row.final_status === 'MATCH' ? '#319795' : '#e53e3e'}`
+                            }}>
+                                {row.final_status}
+                            </span>
+                        </td>
+                      </>
+                    ) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
                     <td style={{ ...tdStyle, color: '#ccc', fontStyle: 'italic' }}>{row.description || '-'}</td>
                   </tr>
                 ))}
