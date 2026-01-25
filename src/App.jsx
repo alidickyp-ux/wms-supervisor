@@ -57,12 +57,14 @@ function App() {
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  // --- Handlers Tombol Sakti ---
+  // --- Handlers Tombol Sakti (PC) ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       setLoading(true);
       try { 
         await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); 
@@ -163,48 +165,53 @@ function App() {
         <header style={headerStyle}>
           <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {/* --- TOMBOL SAKTI DASHBOARD PC --- */}
-            {!isMobile && (activeMenu === 'Snapshoot' ? (
+            
+            {!isMobile && (
               <>
-                <button onClick={() => { if(window.confirm("CLEAR ALL SNAP DATA?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR</button>
-                <button onClick={() => { axios.post(`${API_BASE}?action=refresh_view`).then(()=> { alert("VIEW REFRESHED"); fetchData(); }) }} style={btnWhite}><Database size={12}/> REFRESH VIEW</button>
-                <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
+                {/* Tombol Menu Snapshoot */}
+                {activeMenu === 'Snapshoot' && (
+                  <>
+                    <button onClick={() => { if(window.confirm("CRITICAL: CLEAR ALL SNAP DATA?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR SNAP</button>
+                    <button onClick={() => { axios.post(`${API_BASE}?action=refresh_view`).then(()=> { alert("VIEW REFRESHED"); fetchData(); }) }} style={btnWhite}><Database size={12}/> REFRESH VIEW</button>
+                    <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
+                  </>
+                )}
+
+                {/* Tombol Hapus 1st Count */}
+                {activeMenu === '1st Count' && (
+                  <button onClick={() => { if(window.confirm("WARNING: Hapus SEMUA data 1st Count?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
+                )}
+
+                {/* Tombol Hapus 2nd Count */}
+                {activeMenu === '2nt Count' && (
+                  <button onClick={() => { if(window.confirm("WARNING: Hapus SEMUA data 2nd Count?")) axios.post(`${API_BASE}?action=clear_second`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 2ND</button>
+                )}
+
+                {/* Tombol Export */}
+                {['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
+                  <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT REPORT</button>
+                )}
               </>
-            ) : ['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
-              <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT REPORT</button>
-            ))}
+            )}
+            
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button>
           </div>
         </header>
 
-        {/* --- GRID MASTER LOKASI (AMAN) --- */}
         {activeMenu === 'Master Lokasi' && (
           <div style={gridContainer(isMobile)}>
             {filtered.map(row => (
               <div key={row.unique_id} style={cardGrid}>
                 <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id}</span>
-                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
-                  <div style={toggleCircle(row.assign === 'open')} />
-                </div>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
               </div>
             ))}
           </div>
         )}
 
-        {/* --- MOBILE: 1ST COUNT (NO TABLE) --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
-            {locInfo && (
-              <div style={boxContent}>
-                <div style={boxTitle}>LOCATION CONTENT ({mobLoc}):</div>
-                {locInfo.map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #eee', padding: '5px 0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Art: <b>{item.artikel}</b></span><span>Snap: <b>{item.qty_snap}</b></span></div>
-                    <div style={{ fontSize: '0.55rem', color: '#666' }}>{item.description}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {locInfo && (<div style={boxContent}><div style={boxTitle}>LOCATION CONTENT ({mobLoc}):</div>{locInfo.map((item, idx) => (<div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #f9f9f9', padding: '5px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Art: <b>{item.artikel}</b></span><span>Snap: <b>{item.qty_snap}</b></span></div><div style={{ fontSize: '0.55rem', color: '#666' }}>{item.description}</div></div>))}</div>)}
             <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => handleScan1st(e.target.value)} style={mInput} />
             <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} />
             <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
@@ -212,18 +219,12 @@ function App() {
           </div>
         )}
 
-        {/* --- MOBILE: 2ND COUNT (DROPDOWN TASK & FORM ONLY) --- */}
         {activeMenu === '2nt Count' && isMobile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={labelStyle}>TASK LIST</label>
-              <span style={{ fontSize: '0.6rem', fontWeight: '900', background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: '10px' }}>{taskList2nd.length} REMAINING</span>
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={labelStyle}>TASK LIST</label><span style={{ fontSize: '0.6rem', fontWeight: '900', background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: '10px' }}>{taskList2nd.length} REMAINING</span></div>
             <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ''} onChange={(e) => {
-              const val = e.target.value;
-              if (!val) return setSelectedLoc2nd(null);
-              const [locId, art] = val.split('|');
-              const found = taskList2nd.find(d => d.location_id === locId && d.artikel === art);
+              const val = e.target.value; if (!val) return setSelectedLoc2nd(null);
+              const [locId, art] = val.split('|'); const found = taskList2nd.find(d => d.location_id === locId && d.artikel === art);
               if (found) { setSelectedLoc2nd(found); setMobLoc(''); setMobArt(found.artikel); setMobQty(''); }
             }}>
               <option value="">-- Choose Discrepancy --</option>
@@ -231,16 +232,7 @@ function App() {
             </select>
             {selectedLoc2nd && (
               <div style={formWrapper}>
-                <div style={boxContent}>
-                  <div style={boxTitle}>TARGET ARTICLE:</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span>Art: <b>{selectedLoc2nd.artikel}</b></span>
-                    <span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px', borderTop: '1px solid #cce5ff', paddingTop: '5px' }}>
-                      <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span><span style={{ color: '#ef4444' }}>1st Count: <b>{selectedLoc2nd.qty_1st}</b></span>
-                    </div>
-                  </div>
-                </div>
+                <div style={boxContent}><div style={boxTitle}>TARGET ARTICLE:</div><div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}><span>Art: <b>{selectedLoc2nd.artikel}</b></span><span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px', borderTop: '1px solid #cce5ff', paddingTop: '5px' }}><span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span><span style={{ color: '#ef4444' }}>1st: <b>{selectedLoc2nd.qty_1st}</b></span></div></div></div>
                 <label style={labelStyle}>VALIDATE LOCATION</label><input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={{ ...mInput, borderColor: mobLoc === selectedLoc2nd.location_id ? '#16a34a' : '#ef4444' }} placeholder="Scan to unlock..." />
                 <label style={labelStyle}>FINAL QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
                 <button onClick={handleSaveInput} disabled={mobLoc !== selectedLoc2nd.location_id} style={{ ...btnBlack, opacity: mobLoc === selectedLoc2nd.location_id ? 1 : 0.3 }}>SAVE DATA 2ND</button>
@@ -249,7 +241,6 @@ function App() {
           </div>
         )}
 
-        {/* --- TABEL DATA (TAMPIL DI PC, ATAU MENU RECON DI HP) --- */}
         {((!isMobile && ['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu)) || (isMobile && activeMenu === 'Reconciliation')) && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -268,7 +259,7 @@ function App() {
   );
 }
 
-// --- STYLES (LEXEND 0.7rem - 0.8rem CLEAN WHITE) ---
+// --- STYLES (Lexend 0.7rem - 0.8rem Clean White) ---
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.75rem' };
 const sidebarStyle = (isMobile) => ({ width: isMobile ? '50px' : '180px', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (isMobile) => ({ flex: 1, marginLeft: isMobile ? '50px' : '180px', padding: isMobile ? '15px' : '30px' });
