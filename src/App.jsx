@@ -52,6 +52,35 @@ function App() {
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      setLoading(true);
+      try { 
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); 
+        alert("SUCCESS: MASTER PRODUCT UPLOADED"); 
+        fetchData(); 
+      } catch (e) { alert("ERROR: Upload failed."); } 
+      finally { setLoading(false); }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = data.map(row => {
+      const finalCount = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+      return { 'LOCATION': row.location_id, 'ARTICLE': row.artikel, 'SNAP': row.qty_snap, '1ST': row.qty_1st, '2ND': row.qty_2nd, 'DIFF': finalCount - Number(row.qty_snap || 0), 'STATUS': row.final_status, 'DESCRIPTION': row.description };
+    });
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `COOL_REPORT.xlsx`);
+  };
+
   const handleScan1st = (val) => {
     const cleanVal = val.trim().toUpperCase();
     setMobLoc(cleanVal);
@@ -59,7 +88,7 @@ function App() {
     setLocInfo(articlesInLoc.length > 0 ? articlesInLoc : null);
   };
 
-  // --- 1 & 2. VALIDASI DOUBLE SCAN & VALIDASI ARTIKEL ---
+  // --- 2. VALIDASI DOUBLE SCAN SAFETY ---
   const handleSaveInput = async () => {
     if (!mobLoc || !mobArt || mobQty === '') return alert("REQUIRED: Complete all fields.");
     
@@ -108,17 +137,6 @@ function App() {
     } catch (e) { alert("ERROR: Status failed."); }
   };
 
-  const handleExportExcel = () => {
-    const exportData = data.map(row => {
-      const finalCount = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-      return { 'LOCATION': row.location_id, 'ARTICLE': row.artikel, 'SNAP': row.qty_snap, '1ST': row.qty_1st, '2ND': row.qty_2nd, 'DIFF': finalCount - Number(row.qty_snap || 0), 'STATUS': row.final_status, 'DESCRIPTION': row.description };
-    });
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `COOL_REPORT.xlsx`);
-  };
-
   const filtered = data.filter(item => Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase())));
   
   const taskList2nd = data.filter(d => {
@@ -158,18 +176,18 @@ function App() {
                 {activeMenu === 'Snapshoot' && (
                   <button onClick={() => { if(window.confirm("CLEAR SNAP?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR SNAP</button>
                 )}
-                {/* --- 3. TOMBOL CLEAR 1ST & 2ND DI PC --- */}
+                {/* --- 1. TOMBOL HAPUS (KOSONGKAN) 1ST & 2ND --- */}
                 {activeMenu === '1st Count' && (
-                  <button onClick={() => { if(window.confirm("CLEAR ALL 1ST COUNT?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
+                  <button onClick={() => { if(window.confirm("WARNING: Hapus SEMUA data 1st Count?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
                 )}
                 {activeMenu === '2nt Count' && (
-                  <button onClick={() => { if(window.confirm("CLEAR ALL 2ND COUNT?")) axios.post(`${API_BASE}?action=clear_second`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 2ND</button>
+                  <button onClick={() => { if(window.confirm("WARNING: Hapus SEMUA data 2nd Count?")) axios.post(`${API_BASE}?action=clear_second`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 2ND</button>
                 )}
                 {['Snapshoot'].includes(activeMenu) && (
                   <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
                 )}
                 {['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
-                  <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT</button>
+                  <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT REPORT</button>
                 )}
               </>
             )}
@@ -190,7 +208,7 @@ function App() {
 
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
-            {locInfo && <div style={boxContent}><div style={boxTitle}>LOCATION CONTENT ({mobLoc}):</div>{locInfo.map((item, idx) => (<div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #eee', padding: '5px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Art: <b>{item.artikel}</b></span><span>Snap: <b>{item.qty_snap}</b></span></div><div style={{ fontSize: '0.55rem', color: '#666' }}>{item.description}</div></div>))}</div>}
+            {locInfo && <div style={boxContent}><div style={boxTitle}>LOCATION CONTENT ({mobLoc}):</div>{locInfo.map((item, idx) => (<div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #eee', padding: '5px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Art: <b>{item.artikel}</b></span><span>Snap: <b>{item.qty_snap}</b></span></div><div style={{ fontSize: '0.55rem', color: '#666' }}>{item.description}</div></div>))}</div>)}
             <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => handleScan1st(e.target.value)} style={mInput} placeholder="Lokasi..." />
             <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} placeholder="Scan/Ketik Artikel..." />
             <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} placeholder="0" />
@@ -203,8 +221,7 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={labelStyle}>TASK LIST</label><span style={{ fontSize: '0.6rem', fontWeight: '900', background: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: '10px' }}>{taskList2nd.length} REMAINING</span></div>
             <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ''} onChange={(e) => {
               const val = e.target.value; if (!val) return setSelectedLoc2nd(null);
-              const [locId, art] = val.split('|');
-              const found = taskList2nd.find(d => d.location_id === locId && d.artikel === art);
+              const [locId, art] = val.split('|'); const found = taskList2nd.find(d => d.location_id === locId && d.artikel === art);
               if (found) { setSelectedLoc2nd(found); setMobLoc(''); setMobArt(found.artikel); setMobQty(''); }
             }}>
               <option value="">-- Choose Discrepancy --</option>
