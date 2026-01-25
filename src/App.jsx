@@ -244,34 +244,39 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <label style={labelStyle}>SELECT DISCREPANCY LOCATION</label>
             {/* Dropdown ini memanggil action=recon dari useEffect (fetchData) */}
-            <select 
-              style={mInput} 
-              value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (!val) return setSelectedLoc2nd(null);
-                const [locId, art] = val.split('|');
-                // Mengambil data dari state data yang saat menu 2nd count aktif berisi data 'recon'
-                const found = data.find(d => d.location_id === locId && d.artikel === art);
-                if (found) {
-                  setSelectedLoc2nd(found);
-                  setMobLoc(''); setMobArt(found.artikel); setMobQty('');
-                }
-              }}
-            >
-              <option value="">-- Select Task --</option>
-              {data
-                .filter(d => {
-                  const s = String(d.final_status || '').toUpperCase();
-                  return s.includes('2ND') || (s !== 'MATCH' && s !== 'NEED 1ST COUNT' && s !== '');
-                })
-                .map((loc, i) => (
-                  <option key={i} value={`${loc.location_id}|${loc.artikel}`}>
-                    {loc.location_id} | {loc.artikel}
-                  </option>
-                ))
-              }
-            </select>
+<select 
+  style={mInput} 
+  value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ''}
+  onChange={(e) => {
+    const val = e.target.value;
+    if (!val) return setSelectedLoc2nd(null);
+    const [locId, art] = val.split('|');
+    // Cari data berdasarkan Lokasi DAN Artikel agar spesifik
+    const found = data.find(d => d.location_id === locId && d.artikel === art);
+    if (found) {
+      setSelectedLoc2nd(found);
+      setMobLoc(''); setMobArt(found.artikel); setMobQty('');
+    }
+  }}
+>
+  <option value="">-- Select Task --</option>
+  {data
+    .filter(d => {
+      // Logic Filter: Ambil semua yang mengandung kata '2ND' atau statusnya bukan 'MATCH'
+      const s = String(d.final_status || '').toUpperCase();
+      const snap = Number(d.qty_snap || 0);
+      const first = Number(d.qty_1st || 0);
+      
+      // Munculkan jika: Status eksplisit minta 2nd count ATAU (Snap != 1st dan Snap > 0)
+      return s.includes('2ND') || (s !== 'MATCH' && s !== 'NEED 1ST COUNT' && snap !== first);
+    })
+    .map((loc, i) => (
+      <option key={i} value={`${loc.location_id}|${loc.artikel}`}>
+        {loc.location_id} | {loc.artikel} (Diff: {Number(loc.qty_1st || 0) - Number(loc.qty_snap || 0)})
+      </option>
+    ))
+  }
+</select>
 
             {selectedLoc2nd && (
               <div style={formWrapper}>
