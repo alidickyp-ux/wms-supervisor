@@ -12,10 +12,10 @@ function App() {
   const [password, setPassword] = useState('');
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [data, setData] = useState([]);
+  const [snapData, setSnapData] = useState([]); // KHUSUS REFERENSI BOX CONTENT
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- State Form Operasional ---
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -29,6 +29,14 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Ambil data snapshoot sebagai referensi box content di HP
+  const fetchSnapReference = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
+      setSnapData(res.data.data || []);
+    } catch (e) { console.error("Gagal load referensi snap"); }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -38,26 +46,29 @@ function App() {
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(res.data.data || []);
+      if (isMobile) fetchSnapReference(); // Load referensi pas di HP
     } catch (e) { setData([]); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  // --- Logic Scan 1st Count ---
+  // FIX LOGIC SCAN 1ST COUNT
   const handleScan1st = (val) => {
-    const cleanVal = val.toUpperCase();
+    const cleanVal = val.trim().toUpperCase();
     setMobLoc(cleanVal);
-    const info = data.find(d => String(d.location_id).toUpperCase() === cleanVal);
+    
+    // Cari di snapData, bukan di data (karena data isinya histori hitungan)
+    const info = snapData.find(d => String(d.location_id).trim().toUpperCase() === cleanVal);
+    
     if (info) {
       setLocInfo(info);
-      setMobArt(info.artikel); // Auto-fill tapi tidak dikunci
+      setMobArt(info.artikel); 
     } else {
       setLocInfo(null);
     }
   };
 
-  // --- Logic Toggle Grid Master ---
   const handleToggle = async (uid, current) => {
     const nextStatus = current === 'open' ? 'closed' : 'open';
     try {
@@ -66,24 +77,34 @@ function App() {
     } catch (e) { alert("Gagal update status!"); }
   };
 
-  // --- Logic Simpan Data (1st & 2nd) ---
+  // FIX LOGIC SIMPAN DATA
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return alert("Isi semua form, Bos!");
+    
     setLoading(true);
     try {
-      await axios.post(`${API_BASE}?action=save_input`, {
-        location_id: mobLoc, artikel: mobArt, qty: mobQty,
+      // Mapping target_table agar sesuai dengan logic API Bridge
+      const tableTarget = activeMenu === '1st Count' ? '1st Count' : '2nt Count';
+      
+      const res = await axios.post(`${API_BASE}?action=save_input`, {
+        location_id: mobLoc.trim().toUpperCase(),
+        artikel: mobArt.trim().toUpperCase(),
+        qty: parseInt(mobQty),
         operator: user?.username || 'Admin', 
-        target_table: activeMenu
+        target_table: tableTarget
       });
-      alert("Data Berhasil Disimpan!");
-      setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null); setSelectedLoc2nd(null);
-      fetchData();
-    } catch (e) { alert("Gagal Simpan!"); }
-    finally { setLoading(false); }
+
+      if (res.data.status === 'success') {
+        alert("Data Berhasil Disimpan!");
+        setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null); setSelectedLoc2nd(null);
+        fetchData();
+      }
+    } catch (e) { 
+      alert("Gagal Simpan: " + (e.response?.data?.message || e.message)); 
+    } finally { setLoading(false); }
   };
 
-  // --- Tombol Sakti Actions ---
+  // --- Actions & Helpers ---
   const handleRefreshView = async () => {
     setLoading(true);
     try { await axios.post(`${API_BASE}?action=refresh_view`); alert("View Diperbarui!"); fetchData(); } 
@@ -101,9 +122,7 @@ function App() {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
       setLoading(true);
       try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
       catch (e) { alert("Gagal upload!"); } finally { setLoading(false); }
@@ -137,7 +156,6 @@ function App() {
 
   return (
     <div style={mainLayout}>
-      {/* SIDEBAR */}
       <nav style={sidebarStyle(isMobile)}>
         <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>{isMobile ? 'C' : 'COOL'}</div>
         {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
@@ -151,7 +169,6 @@ function App() {
         </button>
       </nav>
 
-      {/* MAIN CONTENT */}
       <div style={contentArea(isMobile)}>
         <header style={headerStyle}>
           <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
@@ -172,7 +189,6 @@ function App() {
           </div>
         </header>
 
-        {/* --- MENU MASTER LOKASI (GRID) --- */}
         {activeMenu === 'Master Lokasi' && (
           <div style={gridContainer(isMobile)}>
             {filtered.map(row => (
@@ -186,7 +202,6 @@ function App() {
           </div>
         )}
 
-        {/* --- MENU 1ST COUNT (MOBILE) --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
@@ -208,16 +223,16 @@ function App() {
           </div>
         )}
 
-        {/* --- MENU 2ND COUNT (MOBILE) --- */}
         {activeMenu === '2nt Count' && isMobile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {!selectedLoc2nd ? (
               <>
                 <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#ff4444' }}>LIST LOKASI NOT MATCH:</div>
-                {data.filter(d => (Number(d.qty_1st || 0) - Number(d.qty_snap || 0)) !== 0).map(loc => (
-                  <div key={loc.location_id} onClick={() => { setSelectedLoc2nd(loc); setLocInfo(loc); setMobArt(loc.artikel); setMobLoc(''); }} style={listItem}>
+                {/* Logic 2nd Count ngambil dari data recon yang di-load ke active menu 2nd Count */}
+                {data.map(loc => (
+                  <div key={loc.location_id} onClick={() => { setSelectedLoc2nd(loc); setLocInfo(loc); setMobArt(loc.artikel); setMobLoc(loc.location_id); }} style={listItem}>
                     <div style={{ fontWeight: '800' }}>{loc.location_id}</div>
-                    <div style={{ color: '#999' }}>Diff: {Number(loc.qty_1st || 0) - Number(loc.qty_snap || 0)}</div>
+                    <div style={{ color: '#999' }}>1st: {loc.qty_1st} | Snap: {loc.qty_snap}</div>
                   </div>
                 ))}
               </>
@@ -244,34 +259,18 @@ function App() {
           </div>
         )}
 
-        {/* --- TABLE VIEW (PC / MONITORING) --- */}
         {(activeMenu === 'Snapshoot' || activeMenu === 'Reconciliation' || !isMobile) && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
               <thead>
-                <tr style={{ backgroundColor: '#fafafa', borderBottom: '1px solid #eee' }}>
-                  <th style={thStyle}>LOCATION</th><th style={thStyle}>ARTIKEL</th>
-                  {activeMenu === 'Reconciliation' ? (
-                    <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th></>
-                  ) : <th style={thStyle}>QTY</th>}
-                  <th style={thStyle}>DESCRIPTION</th>
-                </tr>
+                <tr style={{ backgroundColor: '#fafafa' }}><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>{activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th></> : <th style={thStyle}>QTY</th>}<th style={thStyle}>DESCRIPTION</th></tr>
               </thead>
               <tbody>
                 {filtered.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
                     <td style={tdStyle}>{row.location_id || row.unique_id}</td>
                     <td style={tdStyle}>{row.artikel}</td>
-                    {activeMenu === 'Reconciliation' ? (
-                      <>
-                        <td style={tdStyle}>{row.qty_snap}</td>
-                        <td style={tdStyle}>{row.qty_1st}</td>
-                        <td style={tdStyle}>{row.qty_2nd}</td>
-                        <td style={{ ...tdStyle, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'green', fontWeight: '800' }}>
-                          {(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}
-                        </td>
-                      </>
-                    ) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
+                    {activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{ ...tdStyle, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'green', fontWeight: '800' }}>{(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}</td></> : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
                     <td style={{ ...tdStyle, color: '#ccc', fontStyle: 'italic' }}>{row.description || '-'}</td>
                   </tr>
                 ))}
@@ -284,7 +283,7 @@ function App() {
   );
 }
 
-// --- STYLES (CLEAN WHITE LEXEND 0.7rem - 0.8rem) ---
+// --- STYLES TETAP SAMA (Lexend, Clean White) ---
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.75rem' };
 const sidebarStyle = (isMobile) => ({ width: isMobile ? '50px' : '180px', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff' });
 const contentArea = (isMobile) => ({ flex: 1, marginLeft: isMobile ? '50px' : '180px', padding: isMobile ? '15px' : '30px' });
@@ -307,7 +306,7 @@ const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 1
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnBack = { background: 'none', border: 'none', color: '#999', fontSize: '0.65rem', marginBottom: '10px', cursor: 'pointer', padding: 0 };
 const btnLogout = { border: 'none', background: 'none', color: '#ff4d4f', padding: '15px', fontSize: '0.7rem', fontWeight: '600', cursor: 'pointer', position: 'absolute', bottom: 0, width: '100%', display: 'flex', alignItems: 'center', gap: '5px' };
-const listItem = { padding: '15px', border: '1px solid #eee', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', cursor: 'pointer' };
+const listItem = { padding: '15px', border: '1px solid #eee', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', cursor: 'pointer', marginBottom: '10px' };
 const toggleContainer = (on) => ({ width: '30px', height: '16px', background: on ? '#000' : '#eee', borderRadius: '10px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '10px', height: '10px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '17px' : '3px', transition: '0.2s' });
 const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' };
