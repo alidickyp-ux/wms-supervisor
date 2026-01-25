@@ -16,6 +16,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // --- State Form Operasional ---
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -29,6 +30,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // --- Data Fetching ---
   const fetchSnapReference = async () => {
     try {
       const res = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
@@ -52,14 +54,11 @@ function App() {
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  // --- LOGIC SCAN 1ST COUNT: Multi-Article & No Auto-Fill ---
+  // --- Logic Operasional ---
   const handleScan1st = (val) => {
     const cleanVal = val.trim().toUpperCase();
     setMobLoc(cleanVal);
-    
-    // Cari SEMUA artikel di lokasi ini (Multi-Article)
     const articlesInLoc = snapData.filter(d => String(d.location_id).trim().toUpperCase() === cleanVal);
-    
     if (articlesInLoc.length > 0) {
       setLocInfo(articlesInLoc); 
     } else {
@@ -78,15 +77,12 @@ function App() {
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return alert("Isi semua form, Bos!");
 
-    // Validasi Anti-Double Input di 1st Count (Pair: Loc + Art)
     if (activeMenu === '1st Count') {
       const isAlreadySaved = data.some(d => 
         String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && 
         String(d.artikel).toUpperCase() === mobArt.trim().toUpperCase()
       );
-      if (isAlreadySaved) {
-        return alert(`Gagal! Artikel ${mobArt} sudah ada di lokasi ${mobLoc}.`);
-      }
+      if (isAlreadySaved) return alert(`Gagal! Artikel ${mobArt} sudah ada di lokasi ${mobLoc}.`);
     }
     
     setLoading(true);
@@ -109,6 +105,7 @@ function App() {
     } finally { setLoading(false); }
   };
 
+  // --- Handlers ---
   const handleRefreshView = async () => {
     setLoading(true);
     try { await axios.post(`${API_BASE}?action=refresh_view`); alert("View Diperbarui!"); fetchData(); } 
@@ -126,9 +123,7 @@ function App() {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
       setLoading(true);
       try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
       catch (e) { alert("Gagal upload!"); } finally { setLoading(false); }
@@ -147,6 +142,7 @@ function App() {
     Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  // --- Auth View ---
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -160,6 +156,7 @@ function App() {
     );
   }
 
+  // --- Main View ---
   return (
     <div style={mainLayout}>
       <nav style={sidebarStyle(isMobile)}>
@@ -195,6 +192,7 @@ function App() {
           </div>
         </header>
 
+        {/* Master Lokasi Grid */}
         {activeMenu === 'Master Lokasi' && (
           <div style={gridContainer(isMobile)}>
             {filtered.map(row => (
@@ -208,6 +206,7 @@ function App() {
           </div>
         )}
 
+        {/* 1st Count Form */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
@@ -216,8 +215,8 @@ function App() {
                 {locInfo.map((item, idx) => (
                   <div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #ddd', padding: '5px 0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Art: <b>{item.artikel}</b></span>
-                        <span>Snap: <b>{item.qty_snap}</b></span>
+                      <span>Art: <b>{item.artikel}</b></span>
+                      <span>Snap: <b>{item.qty_snap}</b></span>
                     </div>
                     <div style={{ fontSize: '0.55rem', fontStyle: 'italic', color: '#666' }}>{item.description}</div>
                   </div>
@@ -234,6 +233,7 @@ function App() {
           </div>
         )}
 
+        {/* 2nd Count List/Form */}
         {activeMenu === '2nt Count' && isMobile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {!selectedLoc2nd ? (
@@ -258,8 +258,8 @@ function App() {
                     <span>Artikel: <b>{selectedLoc2nd.artikel}</b></span>
                     <span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
-                        <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span>
-                        <span style={{ color: 'red' }}>1st: <b>{selectedLoc2nd.qty_1st}</b></span>
+                      <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span>
+                      <span style={{ color: 'red' }}>1st: <b>{selectedLoc2nd.qty_1st}</b></span>
                     </div>
                   </div>
                 </div>
@@ -275,8 +275,7 @@ function App() {
           </div>
         )}
 
-// ... (Bagian atas tetap sama)
-
+        {/* Unified Data Table (Recon, Snapshot, PC View) */}
         {(activeMenu === 'Snapshoot' || activeMenu === 'Reconciliation' || !isMobile) && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -286,11 +285,11 @@ function App() {
                   <th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Reconciliation' ? (
                     <>
-                        <th style={thStyle}>SNAP</th>
-                        <th style={thStyle}>1ST</th>
-                        <th style={thStyle}>2ND</th>
-                        <th style={thStyle}>DIFF</th>
-                        <th style={thStyle}>STATUS</th>
+                      <th style={thStyle}>SNAP</th>
+                      <th style={thStyle}>1ST</th>
+                      <th style={thStyle}>2ND</th>
+                      <th style={thStyle}>DIFF</th>
+                      <th style={thStyle}>STATUS</th>
                     </>
                   ) : <th style={thStyle}>QTY</th>}
                   <th style={thStyle}>DESCRIPTION</th>
@@ -300,7 +299,6 @@ function App() {
                 {filtered.map((row, i) => {
                   const isMatch = row.final_status === 'MATCH';
                   const diff = (Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0);
-
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
                       <td style={tdStyle}>{row.location_id || row.unique_id}</td>
@@ -310,21 +308,16 @@ function App() {
                           <td style={tdStyle}>{row.qty_snap}</td>
                           <td style={tdStyle}>{row.qty_1st}</td>
                           <td style={tdStyle}>{row.qty_2nd}</td>
-                          <td style={{ ...tdStyle, color: diff !== 0 ? 'red' : '#16a34a', fontWeight: '800' }}>
-                              {diff}
-                          </td>
+                          <td style={{ ...tdStyle, color: diff !== 0 ? 'red' : '#16a34a', fontWeight: '800' }}>{diff}</td>
                           <td style={tdStyle}>
-                              <span style={{ 
-                                  padding: '2px 6px', 
-                                  borderRadius: '4px', 
-                                  fontSize: '0.6rem',
-                                  fontWeight: '800',
-                                  backgroundColor: isMatch ? '#f0fdf4' : '#fef2f2',
-                                  color: isMatch ? '#16a34a' : '#ef4444',
-                                  border: `1px solid ${isMatch ? '#16a34a' : '#ef4444'}`
-                              }}>
-                                  {row.final_status}
-                              </span>
+                            <span style={{ 
+                                padding: '2px 6px', borderRadius: '4px', fontSize: '0.6rem', fontWeight: '800',
+                                backgroundColor: isMatch ? '#f0fdf4' : '#fef2f2',
+                                color: isMatch ? '#16a34a' : '#ef4444',
+                                border: `1px solid ${isMatch ? '#16a34a' : '#ef4444'}`
+                            }}>
+                                {row.final_status}
+                            </span>
                           </td>
                         </>
                       ) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
@@ -336,8 +329,6 @@ function App() {
             </table>
           </div>
         )}
-
-// ... (Sisa kode CSS tetap sama)
       </div>
     </div>
   );
