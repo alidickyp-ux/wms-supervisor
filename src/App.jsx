@@ -275,6 +275,8 @@ function App() {
           </div>
         )}
 
+// ... (Bagian atas tetap sama)
+
         {(activeMenu === 'Snapshoot' || activeMenu === 'Reconciliation' || !isMobile) && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -295,40 +297,47 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
-                    <td style={tdStyle}>{row.location_id || row.unique_id}</td>
-                    <td style={tdStyle}>{row.artikel}</td>
-                    {activeMenu === 'Reconciliation' ? (
-                      <>
-                        <td style={tdStyle}>{row.qty_snap}</td>
-                        <td style={tdStyle}>{row.qty_1st}</td>
-                        <td style={tdStyle}>{row.qty_2nd}</td>
-                        <td style={{ ...tdStyle, color: (Number(row.qty_1st||0)+Number(row.qty_2nd||0)-Number(row.qty_snap||0)) !== 0 ? 'red' : 'green', fontWeight: '800' }}>
-                            {(Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0)}
-                        </td>
-                        <td style={tdStyle}>
-                            <span style={{ 
-                                padding: '2px 6px', 
-                                borderRadius: '4px', 
-                                fontSize: '0.6rem',
-                                fontWeight: '800',
-                                backgroundColor: row.final_status === 'MATCH' ? '#e6fffa' : '#fff5f5',
-                                color: row.final_status === 'MATCH' ? '#319795' : '#e53e3e',
-                                border: `1px solid ${row.final_status === 'MATCH' ? '#319795' : '#e53e3e'}`
-                            }}>
-                                {row.final_status}
-                            </span>
-                        </td>
-                      </>
-                    ) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
-                    <td style={{ ...tdStyle, color: '#ccc', fontStyle: 'italic' }}>{row.description || '-'}</td>
-                  </tr>
-                ))}
+                {filtered.map((row, i) => {
+                  const isMatch = row.final_status === 'MATCH';
+                  const diff = (Number(row.qty_1st || 0) + Number(row.qty_2nd || 0)) - Number(row.qty_snap || 0);
+
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                      <td style={tdStyle}>{row.location_id || row.unique_id}</td>
+                      <td style={tdStyle}>{row.artikel}</td>
+                      {activeMenu === 'Reconciliation' ? (
+                        <>
+                          <td style={tdStyle}>{row.qty_snap}</td>
+                          <td style={tdStyle}>{row.qty_1st}</td>
+                          <td style={tdStyle}>{row.qty_2nd}</td>
+                          <td style={{ ...tdStyle, color: diff !== 0 ? 'red' : '#16a34a', fontWeight: '800' }}>
+                              {diff}
+                          </td>
+                          <td style={tdStyle}>
+                              <span style={{ 
+                                  padding: '2px 6px', 
+                                  borderRadius: '4px', 
+                                  fontSize: '0.6rem',
+                                  fontWeight: '800',
+                                  backgroundColor: isMatch ? '#f0fdf4' : '#fef2f2',
+                                  color: isMatch ? '#16a34a' : '#ef4444',
+                                  border: `1px solid ${isMatch ? '#16a34a' : '#ef4444'}`
+                              }}>
+                                  {row.final_status}
+                              </span>
+                          </td>
+                        </>
+                      ) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}
+                      <td style={{ ...tdStyle, color: '#ccc', fontStyle: 'italic' }}>{row.description || '-'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+
+// ... (Sisa kode CSS tetap sama)
       </div>
     </div>
   );
