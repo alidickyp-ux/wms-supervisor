@@ -142,7 +142,6 @@ function App() {
     Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // --- Auth View ---
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -156,7 +155,6 @@ function App() {
     );
   }
 
-  // --- Main View ---
   return (
     <div style={mainLayout}>
       <nav style={sidebarStyle(isMobile)}>
@@ -192,7 +190,6 @@ function App() {
           </div>
         </header>
 
-        {/* Master Lokasi Grid */}
         {activeMenu === 'Master Lokasi' && (
           <div style={gridContainer(isMobile)}>
             {filtered.map(row => (
@@ -206,7 +203,6 @@ function App() {
           </div>
         )}
 
-        {/* 1st Count Form */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
@@ -233,49 +229,71 @@ function App() {
           </div>
         )}
 
-        {/* 2nd Count List/Form */}
         {activeMenu === '2nt Count' && isMobile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {!selectedLoc2nd ? (
-              <>
-                <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#ff4444' }}>LIST ARTIKEL NOT MATCH:</div>
-                {data.filter(d => Number(d.qty_1st || 0) !== Number(d.qty_snap || 0)).map((loc, i) => (
-                  <div key={i} onClick={() => { setSelectedLoc2nd(loc); setMobLoc(loc.location_id); setMobArt(loc.artikel); setLocInfo(snapData.filter(s => s.location_id === loc.location_id)); }} style={listItem}>
-                    <div>
-                      <div style={{ fontWeight: '800' }}>{loc.location_id} - {loc.artikel}</div>
-                      <div style={{ fontSize: '0.6rem', color: '#999' }}>Snap: {loc.qty_snap} | 1st: {loc.qty_1st}</div>
-                    </div>
-                    <div style={{ color: 'red', fontWeight: '800' }}>{Number(loc.qty_1st || 0) - Number(loc.qty_snap || 0)}</div>
-                  </div>
-                ))}
-              </>
-            ) : (
+            <label style={labelStyle}>PILIH LOKASI (NEED 2ND COUNT)</label>
+            <select 
+              style={mInput} 
+              value={selectedLoc2nd ? selectedLoc2nd.location_id : ''}
+              onChange={(e) => {
+                const locId = e.target.value;
+                const found = data.find(d => d.location_id === locId);
+                if (found) {
+                  setSelectedLoc2nd(found);
+                  setLocInfo(snapData.filter(s => s.location_id === locId));
+                  setMobLoc(''); setMobArt(''); setMobQty('');
+                } else {
+                  setSelectedLoc2nd(null);
+                }
+              }}
+            >
+              <option value="">-- Pilih Lokasi Bermasalah --</option>
+              {data
+                .filter(d => d.final_status !== 'MATCH' && d.final_status !== 'NEED 1ST COUNT')
+                .map((loc, i) => (
+                  <option key={i} value={loc.location_id}>
+                    {loc.location_id} ({loc.artikel})
+                  </option>
+                ))
+              }
+            </select>
+
+            {selectedLoc2nd && (
               <div style={formWrapper}>
-                <button onClick={() => setSelectedLoc2nd(null)} style={btnBack}>← Kembali ke List</button>
                 <div style={boxContent}>
                   <div style={boxTitle}>BOX CONTENT (REFERENSI 2ND)</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span>Artikel: <b>{selectedLoc2nd.artikel}</b></span>
-                    <span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
+                    <span style={{ fontSize: '0.55rem', fontStyle: 'italic' }}>{selectedLoc2nd.description}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px', borderTop: '1px solid #cce5ff', paddingTop: '5px' }}>
                       <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span>
                       <span style={{ color: 'red' }}>1st: <b>{selectedLoc2nd.qty_1st}</b></span>
                     </div>
                   </div>
                 </div>
                 <label style={labelStyle}>VALIDASI LOCATION ID</label>
-                <input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={mInput} />
+                <input 
+                  value={mobLoc} 
+                  onChange={e => setMobLoc(e.target.value.toUpperCase())} 
+                  style={{ ...mInput, borderColor: mobLoc === selectedLoc2nd.location_id ? '#16a34a' : '#ff4444' }} 
+                  placeholder="Scan ulang lokasi..."
+                />
                 <label style={labelStyle}>ARTIKEL</label>
                 <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} />
                 <label style={labelStyle}>QTY 2ND COUNT</label>
                 <input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} placeholder="0" />
-                <button onClick={handleSaveInput} style={btnBlack}>SIMPAN DATA 2ND</button>
+                <button 
+                  onClick={handleSaveInput} 
+                  disabled={mobLoc !== selectedLoc2nd.location_id}
+                  style={{ ...btnBlack, opacity: mobLoc === selectedLoc2nd.location_id ? 1 : 0.3 }}
+                >
+                  SIMPAN DATA 2ND
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Unified Data Table (Recon, Snapshot, PC View) */}
         {(activeMenu === 'Snapshoot' || activeMenu === 'Reconciliation' || !isMobile) && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
