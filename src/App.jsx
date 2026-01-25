@@ -123,7 +123,9 @@ function App() {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       setLoading(true);
       try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
       catch (e) { alert("Gagal upload!"); } finally { setLoading(false); }
@@ -237,10 +239,10 @@ function App() {
               value={selectedLoc2nd ? selectedLoc2nd.location_id : ''}
               onChange={(e) => {
                 const locId = e.target.value;
-                const found = data.find(d => d.location_id === locId);
+                const found = data.find(d => String(d.location_id).trim() === locId.trim());
                 if (found) {
                   setSelectedLoc2nd(found);
-                  setLocInfo(snapData.filter(s => s.location_id === locId));
+                  setLocInfo(snapData.filter(s => String(s.location_id).trim() === locId.trim()));
                   setMobLoc(''); setMobArt(''); setMobQty('');
                 } else {
                   setSelectedLoc2nd(null);
@@ -249,10 +251,13 @@ function App() {
             >
               <option value="">-- Pilih Lokasi Bermasalah --</option>
               {data
-                .filter(d => d.final_status !== 'MATCH' && d.final_status !== 'NEED 1ST COUNT')
+                .filter(d => {
+                  const status = String(d.final_status || '').toUpperCase();
+                  return status !== 'MATCH' && status !== 'NEED 1ST COUNT' && status !== '';
+                })
                 .map((loc, i) => (
                   <option key={i} value={loc.location_id}>
-                    {loc.location_id} ({loc.artikel})
+                    {loc.location_id} | {loc.artikel} (Diff: {Number(loc.qty_1st || 0) - Number(loc.qty_snap || 0)})
                   </option>
                 ))
               }
@@ -279,7 +284,7 @@ function App() {
                   placeholder="Scan ulang lokasi..."
                 />
                 <label style={labelStyle}>ARTIKEL</label>
-                <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} />
+                <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} placeholder="Ketik Artikel..." />
                 <label style={labelStyle}>QTY 2ND COUNT</label>
                 <input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} placeholder="0" />
                 <button 
