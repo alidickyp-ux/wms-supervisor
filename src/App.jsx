@@ -54,20 +54,21 @@ function App() {
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      setLoading(true);
-      try { 
+      try {
+        const dataArray = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(dataArray, { type: 'array' });
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        setLoading(true);
         await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); 
-        alert("SUCCESS: MASTER PRODUCT UPLOADED"); 
+        alert("SUCCESS: SNAPSHOT UPLOADED"); 
         fetchData(); 
-      } catch (e) { alert("ERROR: Upload failed."); } 
+      } catch (err) { alert("ERROR: Upload failed."); } 
       finally { setLoading(false); }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const handleExportExcel = () => {
@@ -88,61 +89,31 @@ function App() {
     setLocInfo(articlesInLoc.length > 0 ? articlesInLoc : null);
   };
 
-  // --- 2. VALIDASI DOUBLE SCAN SAFETY ---
   const handleSaveInput = async () => {
     if (!mobLoc || !mobArt || mobQty === '') return alert("REQUIRED: Complete all fields.");
-    
     const cleanLoc = mobLoc.trim().toUpperCase();
     const cleanArt = mobArt.trim().toUpperCase();
 
-    // Validasi 1st Count: Tidak boleh scan artikel yang sama di lokasi yang sama 2x
     if (activeMenu === '1st Count') {
       const isAlreadyInput = data.some(d => 
         String(d.location_id).toUpperCase() === cleanLoc && 
         String(d.artikel).toUpperCase() === cleanArt
       );
-      if (isAlreadyInput) return alert(`VALIDATION ERROR: Artikel ${cleanArt} sudah diinput di lokasi ${cleanLoc}!`);
-    }
-
-    // Validasi 2nd Count: Pastikan Artikel yang diketik sesuai dengan Task yang dipilih
-    if (activeMenu === '2nt Count' && selectedLoc2nd) {
-      if (cleanArt !== selectedLoc2nd.artikel.toUpperCase()) {
-        return alert(`VALIDATION ERROR: Artikel tidak sesuai dengan Task! Harusnya: ${selectedLoc2nd.artikel}`);
-      }
+      if (isAlreadyInput) return alert(`SAFETY ERROR: Artikel ${cleanArt} sudah ada di lokasi ${cleanLoc}!`);
     }
 
     setLoading(true);
     try {
-      const res = await axios.post(`${API_BASE}?action=save_input`, {
-        location_id: cleanLoc,
-        artikel: cleanArt,
-        qty: parseInt(mobQty),
-        operator: user?.username || 'Admin', 
-        target_table: activeMenu 
+      await axios.post(`${API_BASE}?action=save_input`, {
+        location_id: cleanLoc, artikel: cleanArt, qty: parseInt(mobQty),
+        operator: user?.username || 'Admin', target_table: activeMenu 
       });
-      if (res.data.status === 'success') {
-        alert("SUCCESS: DATA SAVED");
-        setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null); setSelectedLoc2nd(null);
-        fetchData();
-      }
+      alert("SUCCESS: DATA SAVED");
+      setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null);
+      fetchData();
     } catch (e) { alert("SYSTEM ERROR: Sync failed."); } 
     finally { setLoading(false); }
   };
-
-  const handleToggle = async (uid, current) => {
-    const nextStatus = current === 'open' ? 'closed' : 'open';
-    try {
-      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
-      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
-    } catch (e) { alert("ERROR: Status failed."); }
-  };
-
-  const filtered = data.filter(item => Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase())));
-  
-  const taskList2nd = data.filter(d => {
-    const s = String(d.final_status || '').toUpperCase();
-    return s.includes('2ND') || s.includes('SHORT') || s.includes('EXCESS');
-  });
 
   if (!isLoggedIn) {
     return (
@@ -162,7 +133,7 @@ function App() {
       <nav style={sidebarStyle(isMobile)}>
         <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>{isMobile ? 'C' : 'COOL'}</div>
         {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
-          <div key={m} onClick={() => { setActiveMenu(m); setLocInfo(null); setSelectedLoc2nd(null); setMobLoc(''); setMobArt(''); setMobQty(''); }} style={navItem(activeMenu === m)}>{isMobile ? m.charAt(0) : m}</div>
+          <div key={m} onClick={() => { setActiveMenu(m); setLocInfo(null); }} style={navItem(activeMenu === m)}>{isMobile ? m.charAt(0) : m}</div>
         ))}
         <button onClick={() => setIsLoggedIn(false)} style={btnLogout}><LogOut size={14} /> {!isMobile && 'Logout'}</button>
       </nav>
@@ -174,17 +145,18 @@ function App() {
             {!isMobile && (
               <>
                 {activeMenu === 'Snapshoot' && (
-                  <button onClick={() => { if(window.confirm("CLEAR SNAP?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR SNAP</button>
+                  <>
+                    <button onClick={() => { if(window.confirm("CLEAR SNAP?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR</button>
+                    <button onClick={() => { axios.post(`${API_BASE}?action=refresh_view`).then(()=> { alert("VIEW REFRESHED"); fetchData(); }) }} style={btnWhite}><Database size={12}/> REFRESH</button>
+                    <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
+                  </>
                 )}
-                {/* --- 1. TOMBOL HAPUS (KOSONGKAN) 1ST & 2ND --- */}
+                {/* --- TOMBOL KOSONGKAN FIX --- */}
                 {activeMenu === '1st Count' && (
-                  <button onClick={() => { if(window.confirm("WARNING: Hapus SEMUA data 1st Count?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
+                  <button onClick={() => { if(window.confirm("HAPUS SEMUA DATA 1ST COUNT?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
                 )}
                 {activeMenu === '2nt Count' && (
-                  <button onClick={() => { if(window.confirm("WARNING: Hapus SEMUA data 2nd Count?")) axios.post(`${API_BASE}?action=clear_second`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 2ND</button>
-                )}
-                {['Snapshoot'].includes(activeMenu) && (
-                  <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
+                  <button onClick={() => { if(window.confirm("HAPUS SEMUA DATA 2ND COUNT?")) axios.post(`${API_BASE}?action=clear_second`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 2ND</button>
                 )}
                 {['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
                   <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT REPORT</button>
@@ -195,60 +167,44 @@ function App() {
           </div>
         </header>
 
+        {/* --- GRID MASTER LOKASI --- */}
         {activeMenu === 'Master Lokasi' && (
           <div style={gridContainer(isMobile)}>
-            {filtered.map(row => (
+            {data.map(row => (
               <div key={row.unique_id} style={cardGrid}>
                 <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id}</span>
-                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
+                <div onClick={() => {
+                  const nextStatus = row.assign === 'open' ? 'closed' : 'open';
+                  axios.post(`${API_BASE}?action=assign_location`, { unique_id: row.unique_id, status: nextStatus }).then(() => fetchData());
+                }} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
               </div>
             ))}
           </div>
         )}
 
+        {/* --- FORM MOBILE 1ST COUNT --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
-            {locInfo && <div style={boxContent}><div style={boxTitle}>LOCATION CONTENT ({mobLoc}):</div>{locInfo.map((item, idx) => (<div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #eee', padding: '5px 0' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Art: <b>{item.artikel}</b></span><span>Snap: <b>{item.qty_snap}</b></span></div><div style={{ fontSize: '0.55rem', color: '#666' }}>{item.description}</div></div>))}</div>)}
-            <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => handleScan1st(e.target.value)} style={mInput} placeholder="Lokasi..." />
-            <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} placeholder="Scan/Ketik Artikel..." />
-            <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} placeholder="0" />
+            {locInfo && <div style={boxContent}><div style={boxTitle}>CONTENT ({mobLoc}):</div>{locInfo.map((item, idx) => (<div key={idx} style={{ borderBottom: '1px solid #eee', padding: '5px 0' }}>{item.artikel} - Snap: {item.qty_snap}</div>))}</div>}
+            <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => handleScan1st(e.target.value)} style={mInput} />
+            <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} />
+            <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE DATA 1ST</button>
           </div>
         )}
 
-        {activeMenu === '2nt Count' && isMobile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={labelStyle}>TASK LIST</label><span style={{ fontSize: '0.6rem', fontWeight: '900', background: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: '10px' }}>{taskList2nd.length} REMAINING</span></div>
-            <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ''} onChange={(e) => {
-              const val = e.target.value; if (!val) return setSelectedLoc2nd(null);
-              const [locId, art] = val.split('|'); const found = taskList2nd.find(d => d.location_id === locId && d.artikel === art);
-              if (found) { setSelectedLoc2nd(found); setMobLoc(''); setMobArt(found.artikel); setMobQty(''); }
-            }}>
-              <option value="">-- Choose Discrepancy --</option>
-              {taskList2nd.map((loc, i) => (<option key={i} value={`${loc.location_id}|${loc.artikel}`}>{loc.location_id} | {loc.artikel}</option>))}
-            </select>
-            {selectedLoc2nd && (
-              <div style={formWrapper}>
-                <div style={boxContent}><div style={boxTitle}>TARGET ARTICLE:</div><div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}><span>Art: <b>{selectedLoc2nd.artikel}</b></span><span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px', borderTop: '1px solid #cce5ff', paddingTop: '5px' }}><span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span><span style={{ color: '#ef4444' }}>1st: <b>{selectedLoc2nd.qty_1st}</b></span></div></div></div>
-                <label style={labelStyle}>VALIDATE LOCATION</label><input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={{ ...mInput, borderColor: mobLoc === selectedLoc2nd.location_id ? '#16a34a' : '#ef4444' }} placeholder="Ketik ulang lokasi..." />
-                <label style={labelStyle}>CONFIRM ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={{ ...mInput, borderColor: mobArt === selectedLoc2nd.artikel ? '#16a34a' : '#ef4444' }} placeholder="Scan ulang artikel..." />
-                <label style={labelStyle}>QTY 2ND COUNT</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
-                <button onClick={handleSaveInput} disabled={mobLoc !== selectedLoc2nd.location_id || mobArt !== selectedLoc2nd.artikel} style={{ ...btnBlack, opacity: (mobLoc === selectedLoc2nd.location_id && mobArt === selectedLoc2nd.artikel) ? 1 : 0.3 }}>SAVE DATA 2ND</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {((!isMobile && ['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu)) || (isMobile && activeMenu === 'Reconciliation')) && activeMenu !== 'Master Lokasi' && (
+        {/* --- TABLE PC --- */}
+        {!isMobile && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
-              <thead><tr style={{ backgroundColor: '#fafafa' }}><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>{activeMenu === 'Reconciliation' ? (<><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>) : <th style={thStyle}>QTY</th>}<th style={thStyle}>DESCRIPTION</th></tr></thead>
-              <tbody>{filtered.map((row, i) => {
-                  const isMatch = String(row.final_status).toUpperCase() === 'MATCH';
-                  const finalVal = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const diff = finalVal - Number(row.qty_snap || 0);
-                  return (<tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td>{activeMenu === 'Reconciliation' ? (<><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{ ...tdStyle, color: diff !== 0 ? '#ef4444' : '#16a34a', fontWeight: '800' }}>{diff}</td><td style={tdStyle}><span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.6rem', fontWeight: '800', backgroundColor: isMatch ? '#f0fdf4' : '#fef2f2', color: isMatch ? '#16a34a' : '#ef4444', border: `1px solid ${isMatch ? '#16a34a' : '#ef4444'}` }}>{row.final_status || 'PENDING'}</span></td></>) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}<td style={{ ...tdStyle, color: '#999', fontSize: '0.65rem' }}>{row.description || '-'}</td></tr>);
-                })}</tbody>
+              <thead><tr style={{ backgroundColor: '#fafafa' }}><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>{activeMenu === 'Reconciliation' ? (<><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>) : <th style={thStyle}>QTY</th>}</tr></thead>
+              <tbody>{data.map((row, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                  <td style={tdStyle}>{row.location_id}</td>
+                  <td style={tdStyle}>{row.artikel}</td>
+                  {activeMenu === 'Reconciliation' ? (<><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={tdStyle}>{Number(row.qty_2nd || row.qty_1st) - Number(row.qty_snap)}</td><td style={tdStyle}>{row.final_status}</td></>) : <td style={tdStyle}>{row.qty_1st || row.qty_snap}</td>}
+                </tr>
+              ))}</tbody>
             </table>
           </div>
         )}
