@@ -12,10 +12,11 @@ function App() {
   const [password, setPassword] = useState('');
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [data, setData] = useState([]);
-  const [snapData, setSnapData] = useState([]); // KHUSUS REFERENSI BOX CONTENT
+  const [snapData, setSnapData] = useState([]); // Referensi Box Content
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // --- State Form Operasional ---
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -46,24 +47,24 @@ function App() {
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(res.data.data || []);
-      if (isMobile) fetchSnapReference(); // Load referensi pas di HP
+      if (isMobile) fetchSnapReference();
     } catch (e) { setData([]); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  // FIX LOGIC SCAN 1ST COUNT
+  // FIX LOGIC SCAN 1ST COUNT: Hanya muncul Box Content, Artikel isi manual
   const handleScan1st = (val) => {
     const cleanVal = val.trim().toUpperCase();
     setMobLoc(cleanVal);
     
-    // Cari di snapData, bukan di data (karena data isinya histori hitungan)
+    // Cari di snapData agar Box Content muncul meskipun sedang di menu 1st Count
     const info = snapData.find(d => String(d.location_id).trim().toUpperCase() === cleanVal);
     
     if (info) {
       setLocInfo(info);
-      setMobArt(info.artikel); 
+      // setMobArt(info.artikel); // Sesuai permintaan, jangan isi otomatis agar diisi manual
     } else {
       setLocInfo(null);
     }
@@ -77,25 +78,22 @@ function App() {
     } catch (e) { alert("Gagal update status!"); }
   };
 
-  // FIX LOGIC SIMPAN DATA
+  // FIX LOGIC SIMPAN DATA: Sinkron dengan kolom qty_1st / qty_2nd di Neon
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return alert("Isi semua form, Bos!");
     
     setLoading(true);
     try {
-      // Mapping target_table agar sesuai dengan logic API Bridge
-      const tableTarget = activeMenu === '1st Count' ? '1st Count' : '2nt Count';
-      
       const res = await axios.post(`${API_BASE}?action=save_input`, {
         location_id: mobLoc.trim().toUpperCase(),
         artikel: mobArt.trim().toUpperCase(),
         qty: parseInt(mobQty),
         operator: user?.username || 'Admin', 
-        target_table: tableTarget
+        target_table: activeMenu // Mengirim '1st Count' atau '2nt Count'
       });
 
       if (res.data.status === 'success') {
-        alert("Data Berhasil Disimpan!");
+        alert("PLENG! Data Berhasil Disimpan.");
         setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null); setSelectedLoc2nd(null);
         fetchData();
       }
@@ -104,7 +102,6 @@ function App() {
     } finally { setLoading(false); }
   };
 
-  // --- Actions & Helpers ---
   const handleRefreshView = async () => {
     setLoading(true);
     try { await axios.post(`${API_BASE}?action=refresh_view`); alert("View Diperbarui!"); fetchData(); } 
@@ -122,7 +119,9 @@ function App() {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       setLoading(true);
       try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
       catch (e) { alert("Gagal upload!"); } finally { setLoading(false); }
@@ -206,10 +205,11 @@ function App() {
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxContent}>
-                <div style={boxTitle}>BOX CONTENT (SNAPSHOOT)</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={boxTitle}>BOX CONTENT (REFERENSI SNAP)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span>Artikel: <b>{locInfo.artikel}</b></span>
-                  <span>Snap: <b>{locInfo.qty_snap}</b></span>
+                  <span>Desc: <b>{locInfo.description || '-'}</b></span>
+                  <span>Qty Snap: <b>{locInfo.qty_snap}</b></span>
                 </div>
               </div>
             )}
@@ -228,9 +228,8 @@ function App() {
             {!selectedLoc2nd ? (
               <>
                 <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#ff4444' }}>LIST LOKASI NOT MATCH:</div>
-                {/* Logic 2nd Count ngambil dari data recon yang di-load ke active menu 2nd Count */}
                 {data.map(loc => (
-                  <div key={loc.location_id} onClick={() => { setSelectedLoc2nd(loc); setLocInfo(loc); setMobArt(loc.artikel); setMobLoc(loc.location_id); }} style={listItem}>
+                  <div key={loc.location_id} onClick={() => { setSelectedLoc2nd(loc); setLocInfo(loc); setMobLoc(loc.location_id); }} style={listItem}>
                     <div style={{ fontWeight: '800' }}>{loc.location_id}</div>
                     <div style={{ color: '#999' }}>1st: {loc.qty_1st} | Snap: {loc.qty_snap}</div>
                   </div>
@@ -240,17 +239,18 @@ function App() {
               <div style={formWrapper}>
                 <button onClick={() => setSelectedLoc2nd(null)} style={btnBack}>← Kembali ke List</button>
                 <div style={boxContent}>
-                  <div style={boxTitle}>BOX CONTENT (2ND COUNT)</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <div style={boxTitle}>BOX CONTENT (REFERENSI 2ND)</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span>Artikel: <b>{selectedLoc2nd.artikel}</b></span>
+                    <span>Desc: <b>{selectedLoc2nd.description || '-'}</b></span>
                     <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span>
+                    <span style={{ color: 'red' }}>1st Count: <b>{selectedLoc2nd.qty_1st}</b></span>
                   </div>
-                  <div style={{ color: 'red' }}>1st Qty: <b>{selectedLoc2nd.qty_1st}</b></div>
                 </div>
                 <label style={labelStyle}>VALIDASI LOCATION ID</label>
                 <input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={mInput} placeholder="Scan ulang lokasi..." />
                 <label style={labelStyle}>ARTIKEL</label>
-                <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} />
+                <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} placeholder="Ketik Artikel..." />
                 <label style={labelStyle}>QTY 2ND COUNT</label>
                 <input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} placeholder="0" />
                 <button onClick={handleSaveInput} style={btnBlack}>SIMPAN DATA 2ND</button>
@@ -283,7 +283,7 @@ function App() {
   );
 }
 
-// --- STYLES TETAP SAMA (Lexend, Clean White) ---
+// --- STYLES ---
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.75rem' };
 const sidebarStyle = (isMobile) => ({ width: isMobile ? '50px' : '180px', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff' });
 const contentArea = (isMobile) => ({ flex: 1, marginLeft: isMobile ? '50px' : '180px', padding: isMobile ? '15px' : '30px' });
