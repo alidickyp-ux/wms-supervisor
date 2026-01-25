@@ -43,7 +43,7 @@ function App() {
     try {
       const targetMap = { 
         'Master Lokasi': 'master', 'Snapshoot': 'snapshot_list', 
-        '1st Count': 'first', '2nt Count': 'second', 'Reconciliation': 'recon' 
+        '1st Count': 'first', '2nt Count': 'recon', 'Reconciliation': 'recon' 
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(res.data.data || []);
