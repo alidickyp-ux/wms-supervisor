@@ -12,7 +12,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [data, setData] = useState([]);
-  const [snapData, setSnapData] = useState([]); // Referensi Box Content
+  const [snapData, setSnapData] = useState([]); // Referensi kamus artikel di lokasi
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -20,7 +20,7 @@ function App() {
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
-  const [locInfo, setLocInfo] = useState(null);
+  const [locInfo, setLocInfo] = useState(null); // Menampung array artikel (Multi-Article)
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -30,7 +30,6 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Ambil data snapshoot sebagai referensi box content di HP
   const fetchSnapReference = async () => {
     try {
       const res = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
@@ -54,17 +53,16 @@ function App() {
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  // FIX LOGIC SCAN 1ST COUNT: Hanya muncul Box Content, Artikel isi manual
+  // --- LOGIC SCAN 1ST COUNT: Multi-Article ---
   const handleScan1st = (val) => {
     const cleanVal = val.trim().toUpperCase();
     setMobLoc(cleanVal);
     
-    // Cari di snapData agar Box Content muncul meskipun sedang di menu 1st Count
-    const info = snapData.find(d => String(d.location_id).trim().toUpperCase() === cleanVal);
+    // Cari SEMUA artikel di lokasi ini dari kamus snapData
+    const articlesInLoc = snapData.filter(d => String(d.location_id).trim().toUpperCase() === cleanVal);
     
-    if (info) {
-      setLocInfo(info);
-      // setMobArt(info.artikel); // Sesuai permintaan, jangan isi otomatis agar diisi manual
+    if (articlesInLoc.length > 0) {
+      setLocInfo(articlesInLoc); // Simpan array untuk di-map di Box Content
     } else {
       setLocInfo(null);
     }
@@ -78,9 +76,20 @@ function App() {
     } catch (e) { alert("Gagal update status!"); }
   };
 
-  // FIX LOGIC SIMPAN DATA: Sinkron dengan kolom qty_1st / qty_2nd di Neon
+  // --- LOGIC SIMPAN: Anti-Double & Dynamic Table ---
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return alert("Isi semua form, Bos!");
+
+    // Validasi Anti-Double Input di 1st Count
+    if (activeMenu === '1st Count') {
+      const isAlreadySaved = data.some(d => 
+        String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && 
+        String(d.artikel).toUpperCase() === mobArt.trim().toUpperCase()
+      );
+      if (isAlreadySaved) {
+        return alert(`Gagal! Artikel ${mobArt} sudah pernah di-input di lokasi ${mobLoc}.`);
+      }
+    }
     
     setLoading(true);
     try {
@@ -89,7 +98,7 @@ function App() {
         artikel: mobArt.trim().toUpperCase(),
         qty: parseInt(mobQty),
         operator: user?.username || 'Admin', 
-        target_table: activeMenu // Mengirim '1st Count' atau '2nt Count'
+        target_table: activeMenu 
       });
 
       if (res.data.status === 'success') {
@@ -102,6 +111,7 @@ function App() {
     } finally { setLoading(false); }
   };
 
+  // --- Actions ---
   const handleRefreshView = async () => {
     setLoading(true);
     try { await axios.post(`${API_BASE}?action=refresh_view`); alert("View Diperbarui!"); fetchData(); } 
@@ -119,9 +129,7 @@ function App() {
     const file = e.target.files[0];
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const excelData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
       setLoading(true);
       try { await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); alert("Upload Berhasil!"); fetchData(); } 
       catch (e) { alert("Gagal upload!"); } finally { setLoading(false); }
@@ -205,12 +213,13 @@ function App() {
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxContent}>
-                <div style={boxTitle}>BOX CONTENT (REFERENSI SNAP)</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span>Artikel: <b>{locInfo.artikel}</b></span>
-                  <span>Desc: <b>{locInfo.description || '-'}</b></span>
-                  <span>Qty Snap: <b>{locInfo.qty_snap}</b></span>
-                </div>
+                <div style={boxTitle}>TARGET DI LOKASI INI ({mobLoc}):</div>
+                {locInfo.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', padding: '5px 0' }}>
+                    <span>{item.artikel}</span>
+                    <span>Snap: <b>{item.qty_snap}</b></span>
+                  </div>
+                ))}
               </div>
             )}
             <label style={labelStyle}>LOCATION ID</label>
@@ -227,11 +236,14 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {!selectedLoc2nd ? (
               <>
-                <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#ff4444' }}>LIST LOKASI NOT MATCH:</div>
-                {data.map(loc => (
-                  <div key={loc.location_id} onClick={() => { setSelectedLoc2nd(loc); setLocInfo(loc); setMobLoc(loc.location_id); }} style={listItem}>
-                    <div style={{ fontWeight: '800' }}>{loc.location_id}</div>
-                    <div style={{ color: '#999' }}>1st: {loc.qty_1st} | Snap: {loc.qty_snap}</div>
+                <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#ff4444' }}>LIST ARTIKEL NOT MATCH:</div>
+                {data.filter(d => Number(d.qty_1st || 0) !== Number(d.qty_snap || 0)).map((loc, i) => (
+                  <div key={i} onClick={() => { setSelectedLoc2nd(loc); setMobLoc(loc.location_id); setMobArt(loc.artikel); setLocInfo(snapData.filter(s => s.location_id === loc.location_id)); }} style={listItem}>
+                    <div>
+                      <div style={{ fontWeight: '800' }}>{loc.location_id} - {loc.artikel}</div>
+                      <div style={{ fontSize: '0.6rem', color: '#999' }}>Snap: {loc.qty_snap} | 1st: {loc.qty_1st}</div>
+                    </div>
+                    <div style={{ color: 'red', fontWeight: '800' }}>{Number(loc.qty_1st || 0) - Number(loc.qty_snap || 0)}</div>
                   </div>
                 ))}
               </>
@@ -240,17 +252,15 @@ function App() {
                 <button onClick={() => setSelectedLoc2nd(null)} style={btnBack}>← Kembali ke List</button>
                 <div style={boxContent}>
                   <div style={boxTitle}>BOX CONTENT (REFERENSI 2ND)</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span>Artikel: <b>{selectedLoc2nd.artikel}</b></span>
-                    <span>Desc: <b>{selectedLoc2nd.description || '-'}</b></span>
-                    <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span>
-                    <span style={{ color: 'red' }}>1st Count: <b>{selectedLoc2nd.qty_1st}</b></span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>Art Snap: <b>{selectedLoc2nd.artikel}</b></span>
+                    <span>1st Qty: <b>{selectedLoc2nd.qty_1st}</b></span>
                   </div>
                 </div>
                 <label style={labelStyle}>VALIDASI LOCATION ID</label>
-                <input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={mInput} placeholder="Scan ulang lokasi..." />
+                <input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={mInput} />
                 <label style={labelStyle}>ARTIKEL</label>
-                <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} placeholder="Ketik Artikel..." />
+                <input value={mobArt} onChange={e => setMobArt(e.target.value)} style={mInput} />
                 <label style={labelStyle}>QTY 2ND COUNT</label>
                 <input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} placeholder="0" />
                 <button onClick={handleSaveInput} style={btnBlack}>SIMPAN DATA 2ND</button>
