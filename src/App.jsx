@@ -68,26 +68,39 @@ function App() {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        setLoading(true);
+        // 1. Baca data excel menjadi array
         const dataArray = new Uint8Array(evt.target.result);
         const workbook = XLSX.read(dataArray, { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        setLoading(true);
-      await axios.post(
-  `${API_BASE}?action=upload_snap&ts=${Date.now()}`,
-  { data: excelData },
-  {
-    headers: {
-      'Cache-Control': 'no-cache'
-    }
-  }
-);
+        const sheetName = workbook.SheetNames[0];
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-      } catch (err) { alert("ERROR: Upload failed."); } 
-      finally { setLoading(false); }
+        // 2. Kirim ke Backend dengan konfigurasi yang benar
+        const res = await axios.post(
+          `${API_BASE}?action=upload_snap&ts=${Date.now()}`,
+          { data: excelData },
+          { headers: { 'Cache-Control': 'no-cache' } }
+        );
+
+        if (res.data.status === 'success') {
+          alert("SUCCESS: SNAPSHOT UPLOADED");
+          fetchData(); // Refresh tabel setelah upload
+        } else {
+          alert("FAILED: " + (res.data.message || "Unknown error"));
+        }
+      } catch (err) {
+        console.error("Upload Detail Error:", err);
+        alert("ERROR: Upload failed. Pastikan format Excel benar.");
+      } finally {
+        setLoading(false);
+        e.target.value = ''; 
+      }
     };
+    
     reader.readAsArrayBuffer(file);
   };
 
