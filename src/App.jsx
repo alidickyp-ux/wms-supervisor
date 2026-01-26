@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { RefreshCw, Search, FileSpreadsheet, Trash2, Database, LogOut, Upload } from 'lucide-react';
+import { RefreshCw, FileSpreadsheet, Trash2, Database, LogOut, Upload } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 
@@ -52,6 +52,19 @@ function App() {
 
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
+  const handleLogin = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}?action=login`, { username, password });
+      if (res.data.status === 'success') {
+        setUser(res.data.user);
+        setIsLoggedIn(true);
+      }
+    } catch (e) {
+      alert("AUTHENTICATION FAILED: Check username/password.");
+    } finally { setLoading(false); }
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -79,7 +92,7 @@ function App() {
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `COOL_REPORT.xlsx`);
+    XLSX.writeFile(wb, `COOL_REPORT_${activeMenu.toUpperCase()}.xlsx`);
   };
 
   const handleScan1st = (val) => {
@@ -94,13 +107,12 @@ function App() {
     const cleanLoc = mobLoc.trim().toUpperCase();
     const cleanArt = mobArt.trim().toUpperCase();
 
-    if (activeMenu === '1st Count') {
-      const isAlreadyInput = data.some(d => 
-        String(d.location_id).toUpperCase() === cleanLoc && 
-        String(d.artikel).toUpperCase() === cleanArt
-      );
-      if (isAlreadyInput) return alert(`SAFETY ERROR: Artikel ${cleanArt} sudah ada di lokasi ${cleanLoc}!`);
-    }
+    // VALIDASI SAFETY DOUBLE SCAN
+    const isAlreadyInput = data.some(d => 
+      String(d.location_id).toUpperCase() === cleanLoc && 
+      String(d.artikel).toUpperCase() === cleanArt
+    );
+    if (isAlreadyInput) return alert(`SAFETY ERROR: Artikel ${cleanArt} sudah diinput di lokasi ${cleanLoc}!`);
 
     setLoading(true);
     try {
@@ -122,7 +134,7 @@ function App() {
           <h2 style={{ fontSize: '1rem', fontWeight: '900', marginBottom: '20px', letterSpacing: '2px' }}>COOL SYSTEM</h2>
           <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} style={mInput} />
           <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={mInput} />
-          <button onClick={() => { setIsLoggedIn(true); setUser({username}); }} style={btnBlack}>AUTHENTICATE</button>
+          <button onClick={handleLogin} disabled={loading} style={btnBlack}>{loading ? 'AUTHENTICATING...' : 'AUTHENTICATE'}</button>
         </div>
       </div>
     );
@@ -147,11 +159,10 @@ function App() {
                 {activeMenu === 'Snapshoot' && (
                   <>
                     <button onClick={() => { if(window.confirm("CLEAR SNAP?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR</button>
-                    <button onClick={() => { axios.post(`${API_BASE}?action=refresh_view`).then(()=> { alert("VIEW REFRESHED"); fetchData(); }) }} style={btnWhite}><Database size={12}/> REFRESH</button>
                     <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
                   </>
                 )}
-                {/* --- TOMBOL KOSONGKAN FIX --- */}
+                {/* TOMBOL KOSONGKAN SAKTI */}
                 {activeMenu === '1st Count' && (
                   <button onClick={() => { if(window.confirm("HAPUS SEMUA DATA 1ST COUNT?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
                 )}
@@ -167,25 +178,35 @@ function App() {
           </div>
         </header>
 
-        {/* --- GRID MASTER LOKASI --- */}
         {activeMenu === 'Master Lokasi' && (
-          <div style={gridContainer(isMobile)}>
-            {data.map(row => (
-              <div key={row.unique_id} style={cardGrid}>
-                <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id}</span>
-                <div onClick={() => {
-                  const nextStatus = row.assign === 'open' ? 'closed' : 'open';
-                  axios.post(`${API_BASE}?action=assign_location`, { unique_id: row.unique_id, status: nextStatus }).then(() => fetchData());
-                }} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
-              </div>
-            ))}
-          </div>
-        )}
+  <div style={gridContainer(isMobile)}>
+    {data.map(row => (
+      <div key={row.unique_id} style={cardGrid}>
+        <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>
+          {row.unique_id}
+        </span>
 
-        {/* --- FORM MOBILE 1ST COUNT --- */}
+        <div
+          onClick={() => {
+            const next = row.assign === 'open' ? 'closed' : 'open';
+            axios.post(`${API_BASE}?action=assign_location`, {
+              unique_id: row.unique_id,
+              status: next
+            }).then(() => fetchData());
+          }}
+          style={toggleContainer(row.assign === 'open')}
+        >
+          <div style={toggleCircle(row.assign === 'open')} />
+        </div>
+      </div>
+    ))}
+  </div>
+)}
+
+
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
-            {locInfo && <div style={boxContent}><div style={boxTitle}>CONTENT ({mobLoc}):</div>{locInfo.map((item, idx) => (<div key={idx} style={{ borderBottom: '1px solid #eee', padding: '5px 0' }}>{item.artikel} - Snap: {item.qty_snap}</div>))}</div>}
+            {locInfo && <div style={boxContent}><div style={boxTitle}>CONTENT ({mobLoc}):</div>{locInfo.map((item, i) => (<div key={i} style={{ borderBottom: '1px solid #eee', padding: '5px 0' }}>{item.artikel} - Snap: {item.qty_snap}</div>))}</div>}
             <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => handleScan1st(e.target.value)} style={mInput} />
             <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} />
             <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
@@ -193,7 +214,6 @@ function App() {
           </div>
         )}
 
-        {/* --- TABLE PC --- */}
         {!isMobile && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
