@@ -73,28 +73,39 @@ function App() {
     reader.onload = async (evt) => {
       try {
         setLoading(true);
-        // 1. Baca data excel menjadi array
         const dataArray = new Uint8Array(evt.target.result);
         const workbook = XLSX.read(dataArray, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-        // 2. Kirim ke Backend dengan konfigurasi yang benar
+        // ==========================================================
+        // PROSES NORMALISASI DATA (PENTING AGAR BACKEND TIDAK BINGUNG)
+        // ==========================================================
+        const cleanData = rawData.map(item => ({
+          location_id: String(item.location_id || item.LOCATION || item.Lokasi || '').trim(),
+          artikel: String(item.artikel || item.ARTICLE || item.Artikel || '').trim(),
+          qty_snap: parseInt(item.qty_snap || item.QTY || item.Qty || 0)
+        })).filter(item => item.location_id && item.artikel); // Hapus baris kosong
+
+        if (cleanData.length === 0) {
+          throw new Error("File Excel kosong atau format kolom salah!");
+        }
+
         const res = await axios.post(
           `${API_BASE}?action=upload_snap&ts=${Date.now()}`,
-          { data: excelData },
+          { data: cleanData }, // Kirim data yang sudah bersih
           { headers: { 'Cache-Control': 'no-cache' } }
         );
 
         if (res.data.status === 'success') {
           alert("SUCCESS: SNAPSHOT UPLOADED");
-          fetchData(); // Refresh tabel setelah upload
+          fetchData();
         } else {
           alert("FAILED: " + (res.data.message || "Unknown error"));
         }
       } catch (err) {
         console.error("Upload Detail Error:", err);
-        alert("ERROR: Upload failed. Pastikan format Excel benar.");
+        alert("ERROR: " + err.message);
       } finally {
         setLoading(false);
         e.target.value = ''; 
