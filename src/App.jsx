@@ -182,7 +182,7 @@ function App() {
           <div style={gridContainer(isMobile)}>
             {filtered.map(row => (
               <div key={row.unique_id} style={cardGrid}>
-                <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.location_id || row.unique_id}</span>
+                <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id || row.unique_id}</span>
                 <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
                   <div style={toggleCircle(row.assign === 'open')} />
                 </div>
