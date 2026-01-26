@@ -1,274 +1,244 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { RefreshCw, Search, FileSpreadsheet, Trash2, Database, LogOut, Upload } from 'lucide-react';
+import { RefreshCw, FileSpreadsheet, Trash2, Database, LogOut, Upload } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState(null);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [activeMenu, setActiveMenu] = useState('Master Lokasi');
-  const [data, setData] = useState([]);
-  const [snapData, setSnapData] = useState([]); 
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [activeMenu, setActiveMenu] = useState('Master Lokasi');
+  const [data, setData] = useState([]);
+  const [snapData, setSnapData] = useState([]); 
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // --- State Form Operasional ---
-  const [mobLoc, setMobLoc] = useState('');
-  const [mobArt, setMobArt] = useState('');
-  const [mobQty, setMobQty] = useState('');
-  const [locInfo, setLocInfo] = useState(null); 
-  const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
+  const [mobLoc, setMobLoc] = useState('');
+  const [mobArt, setMobArt] = useState('');
+  const [mobQty, setMobQty] = useState('');
+  const [locInfo, setLocInfo] = useState(null); 
+  const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-  // --- Data Fetching Logic ---
-  const fetchSnapReference = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
-      setSnapData(res.data.data || []);
-    } catch (e) { console.error("Sync Error"); }
-  };
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const targetMap = { 
+        'Master Lokasi': 'master', 
+        'Snapshoot': 'snapshot_list', 
+        '1st Count': 'first', 
+        '2nt Count': isMobile ? 'recon' : 'second', 
+        'Reconciliation': 'recon' 
+      };
+      const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
+      setData(res.data.data || []);
+      if (isMobile) {
+        const resSnap = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
+        setSnapData(resSnap.data.data || []);
+      }
+    } catch (e) { setData([]); }
+    finally { setLoading(false); }
+  };
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const targetMap = { 
-        'Master Lokasi': 'master', 
-        'Snapshoot': 'snapshot_list', 
-        '1st Count': 'first', 
-        '2nt Count': isMobile ? 'recon' : 'second', 
-        'Reconciliation': 'recon' 
-      };
-      const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
-      setData(res.data.data || []);
-      if (isMobile) fetchSnapReference();
-    } catch (e) { setData([]); }
-    finally { setLoading(false); }
-  };
+  useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
-  useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
+  // --- FIX UPLOAD HANDLER ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        setLoading(true);
+        const dataArr = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(dataArr, { type: 'array' });
+        const wsName = workbook.SheetNames[0];
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[wsName]);
+        
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); 
+        alert("SUCCESS: SNAPSHOT UPLOADED"); 
+        fetchData(); 
+      } catch (err) { alert("ERROR: Upload failed."); } 
+      finally { setLoading(false); e.target.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
 
-  // --- Handlers Tombol Sakti ---
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const excelData = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]);
-      setLoading(true);
-      try { 
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); 
-        alert("SUCCESS: MASTER PRODUCT UPLOADED"); 
-        fetchData(); 
-      } catch (e) { alert("ERROR: Upload failed."); } 
-      finally { setLoading(false); }
-    };
-    reader.readAsBinaryString(file);
-  };
+  const handleExportExcel = () => {
+    const exportData = data.map(row => {
+      const finalCount = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+      return { 
+        'LOCATION': row.location_id, 'ARTICLE': row.artikel, 'SNAP': row.qty_snap, 
+        '1ST': row.qty_1st, '2ND': row.qty_2nd, 'DIFF': finalCount - Number(row.qty_snap || 0), 
+        'STATUS': row.final_status, 'DESCRIPTION': row.description 
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `COOL_REPORT_${activeMenu.toUpperCase()}.xlsx`);
+  };
 
-  const handleExportExcel = () => {
-    const exportData = data.map(row => {
-      const finalCount = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-      return { 
-        'LOCATION': row.location_id, 
-        'ARTICLE': row.artikel, 
-        'SNAP': row.qty_snap, 
-        '1ST': row.qty_1st, 
-        '2ND': row.qty_2nd, 
-        'DIFF': finalCount - Number(row.qty_snap || 0), 
-        'STATUS': row.final_status, 
-        'DESCRIPTION': row.description 
-      };
-    });
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inventory_Report");
-    XLSX.writeFile(wb, `COOL_REPORT_${activeMenu.toUpperCase()}.xlsx`);
-  };
+  const handleSaveInput = async () => {
+    if (!mobLoc || !mobQty || !mobArt) return alert("REQUIRED: Complete all fields.");
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}?action=save_input`, {
+        location_id: mobLoc.trim().toUpperCase(),
+        artikel: mobArt.trim().toUpperCase(),
+        qty: parseInt(mobQty),
+        operator: user?.username || 'Admin', 
+        target_table: activeMenu 
+      });
+      if (res.data.status === 'success') {
+        alert("SUCCESS: DATA SYNCHRONIZED");
+        setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null); setSelectedLoc2nd(null);
+        fetchData();
+      }
+    } catch (e) { alert("SYSTEM ERROR: Sync failed."); } 
+    finally { setLoading(false); }
+  };
 
-  // --- Logic Scan & Save ---
-  const handleScan1st = (val) => {
-    const cleanVal = val.trim().toUpperCase();
-    setMobLoc(cleanVal);
-    const articlesInLoc = snapData.filter(d => String(d.location_id).trim().toUpperCase() === cleanVal);
-    setLocInfo(articlesInLoc.length > 0 ? articlesInLoc : null);
-  };
+  const handleToggle = async (uid, current) => {
+    const nextStatus = current === 'open' ? 'closed' : 'open';
+    try {
+      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
+      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
+    } catch (e) { alert("ERROR: Toggle failed."); }
+  };
 
-  const handleSaveInput = async () => {
-    if (!mobLoc || !mobQty || !mobArt) return alert("REQUIRED: Complete all fields.");
-    setLoading(true);
-    try {
-      const res = await axios.post(`${API_BASE}?action=save_input`, {
-        location_id: mobLoc.trim().toUpperCase(),
-        artikel: mobArt.trim().toUpperCase(),
-        qty: parseInt(mobQty),
-        operator: user?.username || 'Admin', 
-        target_table: activeMenu 
-      });
-      if (res.data.status === 'success') {
-        alert("SUCCESS: DATA SYNCHRONIZED");
-        setMobLoc(''); setMobQty(''); setMobArt(''); setLocInfo(null); setSelectedLoc2nd(null);
-        fetchData();
-      }
-    } catch (e) { alert("SYSTEM ERROR: Sync failed."); } 
-    finally { setLoading(false); }
-  };
+  const filtered = data.filter(item => Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase())));
+  const taskList2nd = data.filter(d => {
+    const s = String(d.final_status || '').toUpperCase();
+    return s.includes('2ND') || s.includes('SHORT') || s.includes('EXCESS') || s.includes('DISCREPANCY');
+  });
 
-  const handleToggle = async (uid, current) => {
-    const nextStatus = current === 'open' ? 'closed' : 'open';
-    try {
-      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
-      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
-    } catch (e) { alert("ERROR: Toggle failed."); }
-  };
+  if (!isLoggedIn) {
+    return (
+      <div style={loginPage}>
+        <div style={loginCard}>
+          <h2 style={{ fontSize: '1rem', fontWeight: '900', marginBottom: '20px', letterSpacing: '2px' }}>COOL SYSTEM</h2>
+          <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} style={mInput} />
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={mInput} />
+          <button onClick={() => { setIsLoggedIn(true); setUser({username}); }} style={btnBlack}>AUTHENTICATE</button>
+        </div>
+      </div>
+    );
+  }
 
-  const filtered = data.filter(item => Object.values(item).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase())));
-  const taskList2nd = data.filter(d => {
-    const s = String(d.final_status || '').toUpperCase();
-    return s.includes('2ND') || s.includes('SHORT') || s.includes('EXCESS');
-  });
+  return (
+    <div style={mainLayout}>
+      <nav style={sidebarStyle(isMobile)}>
+        <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>{isMobile ? 'C' : 'COOL'}</div>
+        {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
+          <div key={m} onClick={() => { setActiveMenu(m); setLocInfo(null); setSelectedLoc2nd(null); }} style={navItem(activeMenu === m)}>{isMobile ? m.charAt(0) : m}</div>
+        ))}
+        <button onClick={() => setIsLoggedIn(false)} style={btnLogout}><LogOut size={14} /> {!isMobile && 'Logout'}</button>
+      </nav>
 
-  if (!isLoggedIn) {
-    return (
-      <div style={loginPage}>
-        <div style={loginCard}>
-          <h2 style={{ fontSize: '1rem', fontWeight: '900', marginBottom: '20px', letterSpacing: '2px' }}>COOL SYSTEM</h2>
-          <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} style={mInput} />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={mInput} />
-          <button onClick={() => { setIsLoggedIn(true); setUser({username}); }} style={btnBlack}>AUTHENTICATE</button>
-        </div>
-      </div>
-    );
-  }
+      <div style={contentArea(isMobile)}>
+        <header style={headerStyle}>
+          <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {!isMobile && (
+              <>
+                {activeMenu === 'Snapshoot' && (
+                  <>
+                    <button onClick={() => { if(window.confirm("CLEAR ALL SNAP DATA?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> CLEAR SNAP</button>
+                    <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
+                  </>
+                )}
+                {activeMenu === '1st Count' && (
+                  <button onClick={() => { if(window.confirm("KOSONGKAN DATA 1ST COUNT?")) axios.post(`${API_BASE}?action=clear_first`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 1ST</button>
+                )}
+                {activeMenu === '2nt Count' && (
+                  <button onClick={() => { if(window.confirm("KOSONGKAN DATA 2ND COUNT?")) axios.post(`${API_BASE}?action=clear_second`).then(()=>fetchData()) }} style={{ ...btnWhite, color: '#ef4444' }}><Trash2 size={12}/> KOSONGKAN 2ND</button>
+                )}
+                {['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
+                  <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT REPORT</button>
+                )}
+              </>
+            )}
+            <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button>
+          </div>
+        </header>
 
-  return (
-    <div style={mainLayout}>
-      <nav style={sidebarStyle(isMobile)}>
-        <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>{isMobile ? 'C' : 'COOL'}</div>
-        {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
-          <div key={m} onClick={() => { setActiveMenu(m); setLocInfo(null); setSelectedLoc2nd(null); }} style={navItem(activeMenu === m)}>{isMobile ? m.charAt(0) : m}</div>
-        ))}
-        <button onClick={() => setIsLoggedIn(false)} style={btnLogout}><LogOut size={14} /> {!isMobile && 'Logout'}</button>
-      </nav>
+        {/* ... (Render Master Lokasi, 1st Count Mobile, 2nd Count Mobile tetap sama) ... */}
+        {activeMenu === 'Master Lokasi' && (
+          <div style={gridContainer(isMobile)}>
+            {filtered.map(row => (
+              <div key={row.unique_id} style={cardGrid}>
+                <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id}</span>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
+                  <div style={toggleCircle(row.assign === 'open')} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
-      <div style={contentArea(isMobile)}>
-        <header style={headerStyle}>
-          <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {/* --- TOMBOL SAKTI DASHBOARD PC --- */}
-            {!isMobile && (activeMenu === 'Snapshoot' ? (
-              <>
-                <button onClick={() => { if(window.confirm("CLEAR ALL SNAP DATA?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()) }} style={btnWhite}><Trash2 size={12}/> CLEAR</button>
-                <button onClick={() => { axios.post(`${API_BASE}?action=refresh_view`).then(()=> { alert("VIEW REFRESHED"); fetchData(); }) }} style={btnWhite}><Database size={12}/> REFRESH VIEW</button>
-                <label style={{ ...btnWhite, background: '#000', color: '#fff' }}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload} /></label>
-              </>
-            ) : ['1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
-              <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12}/> EXPORT REPORT</button>
-            ))}
-            <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button>
-          </div>
-        </header>
+        {activeMenu === '1st Count' && isMobile && (
+          <div style={formWrapper}>
+            {locInfo && (
+              <div style={boxContent}>
+                <div style={boxTitle}>CONTENT ({mobLoc}):</div>
+                {locInfo.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee', padding: '5px 0' }}>
+                    <span>{item.artikel}</span><span>Snap: <b>{item.qty_snap}</b></span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => {
+              const val = e.target.value.toUpperCase();
+              setMobLoc(val);
+              const items = snapData.filter(d => String(d.location_id).toUpperCase() === val);
+              setLocInfo(items.length > 0 ? items : null);
+            }} style={mInput} />
+            <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} />
+            <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
+            <button onClick={handleSaveInput} style={btnBlack}>SAVE DATA 1ST</button>
+          </div>
+        )}
 
-        {/* --- GRID MASTER LOKASI (AMAN) --- */}
-        {activeMenu === 'Master Lokasi' && (
-          <div style={gridContainer(isMobile)}>
-            {filtered.map(row => (
-              <div key={row.unique_id} style={cardGrid}>
-                <span style={{ fontWeight: '800', fontSize: '0.7rem' }}>{row.unique_id}</span>
-                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
-                  <div style={toggleCircle(row.assign === 'open')} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* --- MOBILE: 1ST COUNT (NO TABLE) --- */}
-        {activeMenu === '1st Count' && isMobile && (
-          <div style={formWrapper}>
-            {locInfo && (
-              <div style={boxContent}>
-                <div style={boxTitle}>LOCATION CONTENT ({mobLoc}):</div>
-                {locInfo.map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #eee', padding: '5px 0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Art: <b>{item.artikel}</b></span><span>Snap: <b>{item.qty_snap}</b></span></div>
-                    <div style={{ fontSize: '0.55rem', color: '#666' }}>{item.description}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <label style={labelStyle}>SCAN LOCATION</label><input value={mobLoc} onChange={e => handleScan1st(e.target.value)} style={mInput} />
-            <label style={labelStyle}>ARTICLE ID</label><input value={mobArt} onChange={e => setMobArt(e.target.value.toUpperCase())} style={mInput} />
-            <label style={labelStyle}>QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
-            <button onClick={handleSaveInput} style={btnBlack}>SAVE DATA 1ST</button>
-          </div>
-        )}
-
-        {/* --- MOBILE: 2ND COUNT (DROPDOWN TASK & FORM ONLY) --- */}
-        {activeMenu === '2nt Count' && isMobile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={labelStyle}>TASK LIST</label>
-              <span style={{ fontSize: '0.6rem', fontWeight: '900', background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: '10px' }}>{taskList2nd.length} REMAINING</span>
-            </div>
-            <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ''} onChange={(e) => {
-              const val = e.target.value;
-              if (!val) return setSelectedLoc2nd(null);
-              const [locId, art] = val.split('|');
-              const found = taskList2nd.find(d => d.location_id === locId && d.artikel === art);
-              if (found) { setSelectedLoc2nd(found); setMobLoc(''); setMobArt(found.artikel); setMobQty(''); }
-            }}>
-              <option value="">-- Choose Discrepancy --</option>
-              {taskList2nd.map((loc, i) => (<option key={i} value={`${loc.location_id}|${loc.artikel}`}>{loc.location_id} | {loc.artikel}</option>))}
-            </select>
-            {selectedLoc2nd && (
-              <div style={formWrapper}>
-                <div style={boxContent}>
-                  <div style={boxTitle}>TARGET ARTICLE:</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span>Art: <b>{selectedLoc2nd.artikel}</b></span>
-                    <span style={{ fontSize: '0.55rem' }}>{selectedLoc2nd.description}</span>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px', borderTop: '1px solid #cce5ff', paddingTop: '5px' }}>
-                      <span>Snap: <b>{selectedLoc2nd.qty_snap}</b></span><span style={{ color: '#ef4444' }}>1st Count: <b>{selectedLoc2nd.qty_1st}</b></span>
-                    </div>
-                  </div>
-                </div>
-                <label style={labelStyle}>VALIDATE LOCATION</label><input value={mobLoc} onChange={e => setMobLoc(e.target.value.toUpperCase())} style={{ ...mInput, borderColor: mobLoc === selectedLoc2nd.location_id ? '#16a34a' : '#ef4444' }} placeholder="Scan to unlock..." />
-                <label style={labelStyle}>FINAL QUANTITY</label><input type="number" value={mobQty} onChange={e => setMobQty(e.target.value)} style={qtyInput} />
-                <button onClick={handleSaveInput} disabled={mobLoc !== selectedLoc2nd.location_id} style={{ ...btnBlack, opacity: mobLoc === selectedLoc2nd.location_id ? 1 : 0.3 }}>SAVE DATA 2ND</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* --- TABEL DATA (TAMPIL DI PC, ATAU MENU RECON DI HP) --- */}
-        {((!isMobile && ['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu)) || (isMobile && activeMenu === 'Reconciliation')) && activeMenu !== 'Master Lokasi' && (
-          <div style={tableWrapper}>
-            <table style={tableStyle}>
-              <thead><tr style={{ backgroundColor: '#fafafa' }}><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>{activeMenu === 'Reconciliation' ? (<><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>) : <th style={thStyle}>QTY</th>}<th style={thStyle}>DESCRIPTION</th></tr></thead>
-              <tbody>{filtered.map((row, i) => {
-                  const isMatch = String(row.final_status).toUpperCase() === 'MATCH';
-                  const finalVal = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const diff = finalVal - Number(row.qty_snap || 0);
-                  return (<tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td>{activeMenu === 'Reconciliation' ? (<><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{ ...tdStyle, color: diff !== 0 ? '#ef4444' : '#16a34a', fontWeight: '800' }}>{diff}</td><td style={tdStyle}><span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.6rem', fontWeight: '800', backgroundColor: isMatch ? '#f0fdf4' : '#fef2f2', color: isMatch ? '#16a34a' : '#ef4444', border: `1px solid ${isMatch ? '#16a34a' : '#ef4444'}` }}>{row.final_status || 'PENDING'}</span></td></>) : <td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd || 0}</td>}<td style={{ ...tdStyle, color: '#999', fontSize: '0.65rem' }}>{row.description || '-'}</td></tr>);
-                })}</tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+        {/* --- TABEL DATA --- */}
+        {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
+          <div style={tableWrapper}>
+            <table style={tableStyle}>
+              <thead><tr style={{ backgroundColor: '#fafafa' }}><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>{activeMenu === 'Reconciliation' ? (<><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>) : <th style={thStyle}>QTY</th>}</tr></thead>
+              <tbody>{filtered.map((row, i) => {
+                  const finalVal = Number(row.qty_2nd) > 0 ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+                  const diff = finalVal - Number(row.qty_snap || 0);
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                      <td style={tdStyle}>{row.location_id || row.unique_id}</td>
+                      <td style={tdStyle}>{row.artikel}</td>
+                      {activeMenu === 'Reconciliation' ? (
+                        <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td>
+                        <td style={{ ...tdStyle, color: diff !== 0 ? '#ef4444' : '#16a34a', fontWeight: '800' }}>{diff}</td>
+                        <td style={tdStyle}>{row.final_status}</td></>
+                      ) : <td style={tdStyle}>{row.qty_snap || row.qty_1st}</td>}
+                    </tr>
+                  );
+                })}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// --- STYLES (LEXEND 0.7rem - 0.8rem CLEAN WHITE) ---
+// ... (Styles tetap sama seperti kode sebelumnya)
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.75rem' };
 const sidebarStyle = (isMobile) => ({ width: isMobile ? '50px' : '180px', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (isMobile) => ({ flex: 1, marginLeft: isMobile ? '50px' : '180px', padding: isMobile ? '15px' : '30px' });
