@@ -75,9 +75,16 @@ function App() {
         const workbook = XLSX.read(dataArray, { type: 'array' });
         const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         setLoading(true);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData }); 
-        alert("SUCCESS: SNAPSHOT UPLOADED"); 
-        fetchData(); 
+      await axios.post(
+  `${API_BASE}?action=upload_snap&ts=${Date.now()}`,
+  { data: excelData },
+  {
+    headers: {
+      'Cache-Control': 'no-cache'
+    }
+  }
+);
+
       } catch (err) { alert("ERROR: Upload failed."); } 
       finally { setLoading(false); }
     };
