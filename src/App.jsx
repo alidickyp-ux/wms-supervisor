@@ -15,14 +15,11 @@ function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [data, setData] = useState([]);
   const [snapData, setSnapData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showMobileHome, setShowMobileHome] = useState(true);
-
-  /* Mobile Input States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -76,8 +73,7 @@ function App() {
     reader.onload = async (evt) => {
       setLoading(true);
       try {
-        const dataArr = new Uint8Array(evt.target.result);
-        const workbook = XLSX.read(dataArr, { type: 'array' });
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
         const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
         alert("UPLOAD SUCCESS"); fetchData();
@@ -129,7 +125,7 @@ function App() {
   const badge1st = (window.reconBadgeData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconBadgeData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
-  /* ================= UI RENDERING ================= */
+  /* ================= UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -160,7 +156,7 @@ function App() {
             <BarChart3 size={28} /> <span style={menuText}>Reconcile</span>
           </div>
         </div>
-        <button onClick={()=>setIsLoggedIn(false)} style={btnLogoutMobile}><LogOut size={16} /> Logout System</button>
+        <button onClick={()=>setIsLoggedIn(false)} style={btnLogoutMobile}><LogOut size={16} /> Logout</button>
       </div>
     );
   }
@@ -234,9 +230,9 @@ function App() {
             <input value={mobLoc} style={mInput} onChange={e => {
               const v = e.target.value.toUpperCase(); setMobLoc(v);
               const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
-              const needs = (window.reconBadgeData || []).filter(d => d.location_id?.toUpperCase() === v && d.final_status === 'NEED 1ST COUNT');
-              if (items.length > 0 && needs.length === 0) { setShowCompletePopup(true); setMobLoc(''); } 
-              else { setLocInfo(items); }
+              const needs = (window.reconBadgeData || []).filter(d => d.location_id?.toUpperCase() === v && (d.final_status === 'NEED 1ST COUNT' || d.final_status === 'NEED 2ND COUNT'));
+              if (items.length > 0 && needs.length === 0) { setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); } 
+              else { setLocInfo(items.length > 0 ? items : null); }
             }} />
             <label style={labelStyle}>SCAN ARTIKEL</label>
             <input value={mobArt} style={mInput} onChange={e => setMobArt(e.target.value.toUpperCase())} />
@@ -285,17 +281,6 @@ function App() {
           </div>
         )}
 
-        {/* GRID MASTER LOKASI (PC) */}
-        {!isMobile && activeMenu === 'Master Lokasi' && (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px,1fr))', gap:15}}>
-            {data.map(row => (
-              <div key={row.unique_id} style={cardGrid}><span style={{fontWeight:800, marginBottom:5}}>{row.unique_id}</span>
-              <div onClick={async()=> {await axios.post(`${API_BASE}?action=assign_location`,{unique_id:row.unique_id, status:row.assign==='open'?'closed':'open'}); fetchData();}} 
-              style={toggleContainer(row.assign==='open')}><div style={toggleCircle(row.assign==='open')}/></div></div>
-            ))}
-          </div>
-        )}
-
         {/* 2ND COUNT MOBILE */}
         {isMobile && activeMenu === '2nt Count' && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
@@ -331,7 +316,7 @@ const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgrou
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
-const navItem = (active) => ({ padding: '15px 20px', cursor: 'pointer', color: active ? '#000' : '#ccc', fontWeight: active ? '800' : '400' });
+const navItem = (active) => ({ padding: '15px 20px', cursor: 'pointer', color: active ? '#000' : '#ccc', fontWeight: active ? '800' : '400', fontSize: '0.65rem' });
 const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowX: 'auto' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '12px 10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
@@ -356,8 +341,5 @@ const boxInfoYellow = { ...boxInfo, background: '#fffbeb', border: '1px solid #f
 const boxTitle = { fontWeight: '900', fontSize: '0.55rem', marginBottom: '5px', color: '#1e40af' };
 const infoLine = { borderBottom: '1px solid #e2e8f0', padding: '5px 0' };
 const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
-const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
-const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
-const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 
 export default App;
