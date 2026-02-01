@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import {
@@ -12,41 +12,65 @@ import {
 const API_BASE = "https://wms-neon-bridge.vercel.app/api/inventory";
 
 export default function App() {
-  /* ===================== AUTH ===================== */
+  /* ================= AUTH ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
 
-  /* ===================== UI ===================== */
+  /* ================= UI ================= */
   const [activeMenu, setActiveMenu] = useState("Master Lokasi");
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  /* ===================== DATA ===================== */
+  /* ================= DATA ================= */
   const [data, setData] = useState([]);
   const [snapData, setSnapData] = useState([]);
 
-  /* ===================== MOBILE INPUT ===================== */
+  /* ================= INPUT (MOBILE) ================= */
   const [mobLoc, setMobLoc] = useState("");
   const [mobArt, setMobArt] = useState("");
   const [mobQty, setMobQty] = useState("");
   const [locInfo, setLocInfo] = useState(null);
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
 
-  /* ===================== RESPONSIVE ===================== */
+  /* ================= RESPONSIVE ================= */
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
-    const resize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    const r = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", r);
+    return () => window.removeEventListener("resize", r);
   }, []);
 
-  /* ===================== FETCH ===================== */
+  /* ================= LOGIN ================= */
+  const handleLogin = async () => {
+    if (!username || !password) return alert("ISI USERNAME & PASSWORD");
+    setLoginLoading(true);
+    try {
+      const res = await axios.post(
+        `${API_BASE}?action=login`,
+        { username, password }
+      );
+
+      if (res.data.status === "success") {
+        setUser(res.data.user);
+        setIsLoggedIn(true);
+      } else {
+        alert(res.data.message || "LOGIN GAGAL");
+      }
+    } catch (e) {
+      alert(e.response?.data?.message || "LOGIN ERROR");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  /* ================= FETCH ================= */
   const fetchData = async () => {
     setLoading(true);
     try {
-      const targetMap = {
+      const map = {
         "Master Lokasi": "master",
         "Snapshot": "snapshot_list",
         "1st Count": "first",
@@ -54,19 +78,19 @@ export default function App() {
         "Reconciliation": "recon"
       };
 
-      const target = targetMap[activeMenu];
+      const target = map[activeMenu];
       if (!target) return;
 
       const res = await axios.get(
         `${API_BASE}?action=get_data&target=${target}`
       );
-      setData(res.data?.data || []);
+      setData(res.data.data || []);
 
       if (isMobile) {
         const snap = await axios.get(
           `${API_BASE}?action=get_data&target=snapshot_list`
         );
-        setSnapData(snap.data?.data || []);
+        setSnapData(snap.data.data || []);
       }
     } catch {
       setData([]);
@@ -79,44 +103,17 @@ export default function App() {
     if (isLoggedIn) fetchData();
   }, [activeMenu, isLoggedIn]);
 
-  /* ===================== UPLOAD SNAP ===================== */
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        setLoading(true);
-        const wb = XLSX.read(new Uint8Array(evt.target.result), {
-          type: "array"
-        });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: json });
-        alert("SUCCESS: SNAPSHOT UPLOADED");
-        fetchData();
-      } catch {
-        alert("ERROR: Upload failed");
-      } finally {
-        setLoading(false);
-        e.target.value = "";
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  /* ===================== SAVE INPUT ===================== */
+  /* ================= SAVE INPUT ================= */
   const handleSaveInput = async () => {
     if (!mobLoc || !mobArt || mobQty === "")
-      return alert("Lengkapi semua field");
+      return alert("LENGKAPI DATA");
 
     if (activeMenu === "2nd Count" && selectedLoc2nd) {
       if (
-        mobLoc.trim().toUpperCase() !==
+        mobLoc.toUpperCase() !==
         selectedLoc2nd.location_id.toUpperCase()
       ) {
-        return alert("Lokasi tidak sesuai target");
+        return alert("LOKASI TIDAK SESUAI TARGET");
       }
     }
 
@@ -126,10 +123,11 @@ export default function App() {
         location_id: mobLoc.toUpperCase(),
         artikel: mobArt.toUpperCase(),
         qty: Number(mobQty),
-        operator: user?.username || "ADMIN",
+        operator: user.username,
         target_table: activeMenu
       });
-      alert("DATA SAVED");
+
+      alert("DATA TERSIMPAN");
       setMobLoc("");
       setMobArt("");
       setMobQty("");
@@ -137,33 +135,25 @@ export default function App() {
       setSelectedLoc2nd(null);
       fetchData();
     } catch {
-      alert("SAVE FAILED");
+      alert("GAGAL SIMPAN DATA");
     } finally {
       setLoading(false);
     }
   };
 
-  /* ===================== TOGGLE MASTER ===================== */
+  /* ================= MASTER TOGGLE ================= */
   const handleToggle = async (uid, current) => {
     const next = current === "open" ? "closed" : "open";
-    try {
-      await axios.post(`${API_BASE}?action=assign_location`, {
-        unique_id: uid,
-        status: next
-      });
-      setData((prev) =>
-        prev.map((i) =>
-          i.unique_id === uid ? { ...i, assign: next } : i
-        )
-      );
-    } catch {
-      alert("TOGGLE ERROR");
-    }
+    await axios.post(`${API_BASE}?action=assign_location`, {
+      unique_id: uid,
+      status: next
+    });
+    fetchData();
   };
 
-  /* ===================== DERIVED ===================== */
-  const filtered = data.filter((row) =>
-    Object.values(row || {}).some((v) =>
+  /* ================= FILTER ================= */
+  const filtered = data.filter((r) =>
+    Object.values(r || {}).some((v) =>
       String(v ?? "")
         .toLowerCase()
         .includes(searchTerm.toLowerCase())
@@ -171,48 +161,47 @@ export default function App() {
   );
 
   const taskList2nd = data.filter((d) =>
-    String(d.final_status || "").toUpperCase().match(/NEED|SHORT|EXCESS/)
+    String(d.final_status || "")
+      .toUpperCase()
+      .match(/NEED|SHORT|EXCESS/)
   );
 
-  /* ===================== LOGIN ===================== */
+  /* ================= LOGIN PAGE ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
         <div style={loginCard}>
-          <h2 style={{ marginBottom: 20 }}>COOL SYSTEM</h2>
+          <h3>COOL SYSTEM</h3>
           <input
+            style={mInput}
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            style={mInput}
           />
           <input
+            style={mInput}
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={mInput}
           />
-          <button
-            style={btnBlack}
-            onClick={() => {
-              setIsLoggedIn(true);
-              setUser({ username });
-            }}
-          >
-            LOGIN
+          <button style={btnBlack} onClick={handleLogin}>
+            {loginLoading ? "AUTH..." : "LOGIN"}
           </button>
         </div>
       </div>
     );
   }
 
-  /* ===================== MAIN ===================== */
+  /* ================= MAIN ================= */
   return (
     <div style={mainLayout}>
       <nav style={sidebarStyle(isMobile)}>
-        <div style={{ padding: 20, fontWeight: 900 }}>
-          {isMobile ? "C" : "COOL"}
+        <div style={{ padding: 15, fontWeight: 900 }}>
+          COOL
+          <div style={{ fontSize: "0.6rem", marginTop: 4 }}>
+            {user.full_name}
+          </div>
         </div>
 
         {[
@@ -224,11 +213,7 @@ export default function App() {
         ].map((m) => (
           <div
             key={m}
-            onClick={() => {
-              setActiveMenu(m);
-              setSelectedLoc2nd(null);
-              setLocInfo(null);
-            }}
+            onClick={() => setActiveMenu(m)}
             style={navItem(activeMenu === m)}
           >
             {isMobile ? m[0] : m}
@@ -248,20 +233,51 @@ export default function App() {
           </button>
         </header>
 
-        {/* MASTER LOKASI */}
-        {activeMenu === "Master Lokasi" && (
-          <div style={gridContainer(isMobile)}>
-            {filtered.map((r) => (
-              <div key={r.unique_id} style={cardGrid}>
-                <b>{r.unique_id}</b>
-                <div
-                  style={toggleContainer(r.assign === "open")}
-                  onClick={() => handleToggle(r.unique_id, r.assign)}
-                >
-                  <div style={toggleCircle(r.assign === "open")} />
-                </div>
+        {/* ===== 1ST COUNT MOBILE ===== */}
+        {activeMenu === "1st Count" && isMobile && (
+          <div style={formWrapper}>
+            <label style={labelStyle}>SCAN LOCATION</label>
+            <input
+              style={mInput}
+              value={mobLoc}
+              onChange={(e) => {
+                const val = e.target.value.toUpperCase();
+                setMobLoc(val);
+                const items = snapData.filter(
+                  (d) => d.location_id === val
+                );
+                setLocInfo(items.length ? items : null);
+              }}
+            />
+
+            {locInfo && (
+              <div style={boxContent}>
+                {locInfo.map((i, idx) => (
+                  <div key={idx}>
+                    {i.artikel} : {i.qty_snap}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            <label style={labelStyle}>ARTICLE</label>
+            <input
+              style={mInput}
+              value={mobArt}
+              onChange={(e) => setMobArt(e.target.value.toUpperCase())}
+            />
+
+            <label style={labelStyle}>QTY</label>
+            <input
+              type="number"
+              style={qtyInput}
+              value={mobQty}
+              onChange={(e) => setMobQty(e.target.value)}
+            />
+
+            <button style={btnBlack} onClick={handleSaveInput}>
+              SAVE 1ST COUNT
+            </button>
           </div>
         )}
       </div>
@@ -269,8 +285,7 @@ export default function App() {
   );
 }
 
-/* ===================== STYLES ===================== */
-
+/* ================= STYLE ================= */
 const mainLayout = { display: "flex", minHeight: "100vh" };
 const sidebarStyle = (m) => ({
   width: m ? 50 : 180,
@@ -283,26 +298,11 @@ const contentArea = (m) => ({
   padding: 20,
   width: "100%"
 });
-const headerStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  marginBottom: 20
-};
+const headerStyle = { display: "flex", justifyContent: "space-between" };
 const navItem = (a) => ({
   padding: "10px 20px",
   cursor: "pointer",
   fontWeight: a ? 800 : 400
-});
-const cardGrid = {
-  border: "1px solid #eee",
-  padding: 15,
-  borderRadius: 6,
-  textAlign: "center"
-};
-const gridContainer = () => ({
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(100px,1fr))",
-  gap: 12
 });
 const mInput = {
   width: "100%",
@@ -311,6 +311,7 @@ const mInput = {
   border: "1px solid #ddd",
   borderRadius: 6
 };
+const qtyInput = { ...mInput, fontSize: "1.5rem", fontWeight: 900 };
 const btnBlack = {
   width: "100%",
   background: "#000",
@@ -329,36 +330,26 @@ const btnLogout = {
   position: "absolute",
   bottom: 0,
   width: "100%",
+  padding: 12,
   border: "none",
   background: "none",
-  padding: 15,
   color: "#ef4444"
 };
-const toggleContainer = (on) => ({
-  width: 34,
-  height: 18,
-  background: on ? "#000" : "#ddd",
-  borderRadius: 12,
-  position: "relative"
-});
-const toggleCircle = (on) => ({
-  width: 12,
-  height: 12,
-  background: "#fff",
-  borderRadius: "50%",
-  position: "absolute",
-  top: 3,
-  left: on ? 18 : 4
-});
+const formWrapper = { border: "1px solid #eee", padding: 20 };
+const labelStyle = { fontSize: "0.6rem", fontWeight: 800 };
+const boxContent = {
+  background: "#f0f7ff",
+  padding: 10,
+  marginBottom: 10
+};
 const loginPage = {
   height: "100vh",
   display: "flex",
-  alignItems: "center",
-  justifyContent: "center"
+  justifyContent: "center",
+  alignItems: "center"
 };
 const loginCard = {
   width: 300,
   padding: 30,
-  border: "1px solid #eee",
-  borderRadius: 10
+  border: "1px solid #eee"
 };
