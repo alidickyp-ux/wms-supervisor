@@ -3,7 +3,8 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import {
   RefreshCw, FileSpreadsheet, Trash2, Database, LogOut, Upload,
-  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download, XCircle
+  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download, XCircle, 
+  CheckCircle2, AlertCircle, Loader2
 } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
@@ -29,6 +30,9 @@ function App() {
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
   const [showCompletePopup, setShowCompletePopup] = useState(false);
 
+  /* Modern Notification State */
+  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -37,11 +41,15 @@ function App() {
   }, []);
 
   /* ================= UTILS ================= */
+  const showToast = (msg, type = 'success') => {
+    setToast({ show: true, msg, type });
+    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
+  };
+
   const formatWIB = (ts) => {
     if (!ts) return '-';
     try {
-      const date = new Date(ts);
-      return date.toLocaleString('id-ID', { 
+      return new Date(ts).toLocaleString('id-ID', { 
         timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
@@ -79,21 +87,27 @@ function App() {
         const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
         const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        alert("UPLOAD SUCCESS"); fetchData();
-      } catch (err) { alert("FAILED"); }
+        showToast("Snapshot Uploaded!"); fetchData();
+      } catch (err) { showToast("Upload Failed", "error"); }
       finally { setLoading(false); e.target.value = ''; }
     };
     reader.readAsArrayBuffer(file);
   };
 
   const handleSaveInput = async () => {
-    if (!mobLoc || !mobQty || !mobArt) return alert("LENGKAPI DATA!");
+    if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
 
     if (activeMenu === '1st Count') {
       const isExist = (data || []).some(d => d.location_id?.toUpperCase() === locU && d.artikel?.toUpperCase() === artU);
-      if (isExist) return alert("SUDAH DI INPUT!");
+      if (isExist) return showToast("Item Already Scanned!", "error");
+    }
+
+    if (activeMenu === '2nt Count' && selectedLoc2nd) {
+      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
+        return showToast("Validation Failed!", "error");
+      }
     }
 
     setLoading(true);
@@ -101,9 +115,10 @@ function App() {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      alert("TERSIMPAN"); setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
+      showToast("Data Saved Successfully!"); 
+      setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
       fetchData();
-    } catch (e) { alert("GAGAL"); }
+    } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
   };
 
@@ -112,16 +127,19 @@ function App() {
     try {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
       fetchData();
-    } catch (e) { alert("TOGGLE GAGAL"); }
+    } catch (e) { showToast("Update Failed", "error"); }
   };
 
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
       const res = await axios.post(`${API_BASE}?action=login`, { username, password });
-      if (res.data.status === 'success') { setUser(res.data.user); setIsLoggedIn(true); }
-      else { alert("LOGIN GAGAL"); }
-    } catch (e) { alert("ERROR"); }
+      if (res.data.status === 'success') { 
+        setUser(res.data.user); setIsLoggedIn(true); 
+      } else { 
+        showToast("Invalid Credentials", "error"); 
+      }
+    } catch (e) { showToast("Server Error", "error"); }
     finally { setLoginLoading(false); }
   };
 
@@ -129,23 +147,37 @@ function App() {
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
+  // --- LOGIN PAGE ---
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
+        {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
-          <h2 style={{fontWeight:900, marginBottom:20, letterSpacing:'2px'}}>COOL SYSTEM</h2>
-          <input placeholder="Username" style={mInput} value={username} onChange={e=>setUsername(e.target.value)} />
-          <input type="password" placeholder="Password" style={mInput} value={password} onChange={e=>setPassword(e.target.value)} />
-          <button onClick={handleLogin} style={btnBlack}>{loginLoading ? "..." : "LOGIN"}</button>
+          <div style={{background: '#000', color:'#fff', padding:'20px', borderRadius:'12px 12px 0 0'}}>
+            <h2 style={{fontWeight:900, fontSize:'1.2rem', letterSpacing:'2px'}}>COOL SYSTEM</h2>
+            <p style={{fontSize:'0.6rem', opacity:0.7, marginTop:'5px'}}>LOGISTICS MANAGEMENT</p>
+          </div>
+          <div style={{padding:'30px'}}>
+            <input placeholder="Username" style={mInput} value={username} onChange={e=>setUsername(e.target.value)} />
+            <input type="password" placeholder="Password" style={mInput} value={password} onChange={e=>setPassword(e.target.value)} />
+            <button onClick={handleLogin} style={btnBlack}>
+              {loginLoading ? <Loader2 className="animate-spin" size={18} /> : "LOGIN"}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // --- MOBILE HOME ---
   if (isMobile && showMobileHome) {
     return (
       <div style={mobileHomeLayout}>
-        <div style={mobileHeader}><h2 style={{fontWeight:900}}>COOL MOBILE</h2><p style={{fontSize:'0.6rem', opacity:0.5}}>{user?.full_name}</p></div>
+        {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
+        <div style={mobileHeader}>
+          <h2 style={{fontWeight:900}}>COOL MOBILE</h2>
+          <p style={{fontSize:'0.6rem', opacity:0.5}}>{user?.full_name}</p>
+        </div>
         <div style={mobileMenuGrid}>
           <div style={menuCard} onClick={() => { setActiveMenu('1st Count'); setShowMobileHome(false); }}>
             <div style={{position:'relative'}}><ClipboardCheck size={28}/>{badge1st > 0 && <div style={badgeStyle}>{badge1st}</div>}</div>
@@ -166,9 +198,16 @@ function App() {
 
   return (
     <div style={mainLayout}>
+      {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
+      
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
-          <div style={popupContent}><XCircle size={100} color="#ef4444" /><h2 style={{fontWeight:900, marginTop:15}}>LOKASI COMPLETE</h2><p style={{fontSize:'0.8rem'}}>Semua tugas di lokasi ini sudah selesai dihitung.</p></div>
+          <div style={popupContent}>
+            <XCircle size={80} color="#ef4444" strokeWidth={3} />
+            <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI COMPLETE</h2>
+            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Tugas penghitungan di lokasi ini sudah selesai.</p>
+            <button style={{...btnBlack, marginTop:25, width:'120px'}} onClick={()=>setShowCompletePopup(false)}>OK</button>
+          </div>
         </div>
       )}
 
@@ -193,7 +232,7 @@ function App() {
               <>
                 {activeMenu === 'Snapshoot' && (
                   <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={()=>axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData())} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear all Snapshots?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
                   <><button onClick={() => {
@@ -201,12 +240,12 @@ function App() {
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
                     XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
                   }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
-                  <button onClick={() => axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData())} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear this data?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {activeMenu === 'Reconciliation' && <button onClick={() => {
                    const ws = XLSX.utils.json_to_sheet(data.map(r => {
-                      const finalV = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                      const diffV = (r.final_status === 'MATCH') ? 0 : (finalV - Number(r.qty_snap || 0));
+                      const finalVal = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+                      const diffV = (r.final_status === 'MATCH') ? 0 : (finalVal - Number(r.qty_snap || 0));
                       return { ...r, DIFF: diffV };
                    }));
                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
@@ -218,6 +257,7 @@ function App() {
           </div>
         </header>
 
+        {/* PC GRID MASTER */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {data.map(row => (
@@ -231,6 +271,7 @@ function App() {
           </div>
         )}
 
+        {/* TABLES */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -261,6 +302,7 @@ function App() {
           </div>
         )}
 
+        {/* MOBILE FORMS */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && locInfo.length > 0 && (
@@ -317,6 +359,13 @@ function App() {
 }
 
 /* ================= STYLES ================= */
+const toastStyle = (type) => ({
+  position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+  backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff',
+  padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999,
+  boxShadow: '0 4px 15px rgba(0,0,0,0.2)', fontSize: '0.75rem', animation: 'slideDown 0.3s ease-out'
+});
+
 const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
@@ -327,14 +376,14 @@ const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowX:
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '12px 10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
 const tdStyle = { padding: '12px 10px' };
-const mInput = { width: '100%', padding: '10px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '6px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
+const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
-const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '6px', fontWeight: '800', cursor: 'pointer' };
+const btnBlack = { display:'flex', alignItems:'center', justifyContent:'center', width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer' };
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
-const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f9f9f9' };
-const loginCard = { width: '280px', padding: '30px', background: '#fff', border: '1px solid #eee', borderRadius: '8px', textAlign: 'center' };
+const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
+const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
 const mobileHeader = { padding: '30px', textAlign: 'center', borderBottom: '1px solid #eee', width: '100%' };
 const mobileMenuGrid = { display: 'grid', gridTemplateColumns: '1fr', gap: '15px', padding: '20px', width: '100%', boxSizing: 'border-box' };
@@ -351,7 +400,7 @@ const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(aut
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
-const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.9)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 };
-const popupContent = { background:'#fff', padding:40, borderRadius:20, textAlign:'center', width:'85%', border:'3px solid #ef4444' };
+const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
+const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 
 export default App;
