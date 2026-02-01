@@ -40,7 +40,8 @@ function App() {
   const formatWIB = (ts) => {
     if (!ts) return '-';
     try {
-      return new Date(ts).toLocaleString('id-ID', { 
+      const date = new Date(ts);
+      return date.toLocaleString('id-ID', { 
         timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
@@ -56,12 +57,9 @@ function App() {
         '1st Count': 'first', '2nt Count': isMobile ? 'recon' : 'second', 'Reconciliation': 'recon'
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
-      const resultData = res.data.data || [];
-      setData(resultData);
-
+      setData(res.data.data || []);
       const resSnap = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
       setSnapData(resSnap.data.data || []);
-
       const resRecon = await axios.get(`${API_BASE}?action=get_data&target=recon`);
       window.reconCacheData = resRecon.data.data || [];
     } catch (e) { setData([]); }
@@ -103,7 +101,7 @@ function App() {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      alert("TERSIMPAN"); setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null);
+      alert("TERSIMPAN"); setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
       fetchData();
     } catch (e) { alert("GAGAL"); }
     finally { setLoading(false); }
@@ -170,7 +168,7 @@ function App() {
     <div style={mainLayout}>
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
-          <div style={popupContent}><XCircle size={100} color="#ef4444" /><h2 style={{fontWeight:900, marginTop:15}}>LOKASI COMPLETE</h2><p style={{fontSize:'0.7rem'}}>Semua tugas di lokasi ini sudah selesai dihitung.</p></div>
+          <div style={popupContent}><XCircle size={100} color="#ef4444" /><h2 style={{fontWeight:900, marginTop:15}}>LOKASI COMPLETE</h2><p style={{fontSize:'0.8rem'}}>Semua tugas di lokasi ini sudah selesai dihitung.</p></div>
         </div>
       )}
 
@@ -207,9 +205,9 @@ function App() {
                 )}
                 {activeMenu === 'Reconciliation' && <button onClick={() => {
                    const ws = XLSX.utils.json_to_sheet(data.map(r => {
-                      const finalVal = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                      const diff = (r.final_status === 'MATCH') ? 0 : (finalVal - Number(r.qty_snap || 0));
-                      return { ...r, DIFF: diff };
+                      const finalV = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+                      const diffV = (r.final_status === 'MATCH') ? 0 : (finalV - Number(r.qty_snap || 0));
+                      return { ...r, DIFF: diffV };
                    }));
                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
                    XLSX.writeFile(wb, "COOL_RECON.xlsx");
@@ -220,7 +218,6 @@ function App() {
           </div>
         </header>
 
-        {/* MASTER LOKASI GRID (PC) */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {data.map(row => (
@@ -234,7 +231,6 @@ function App() {
           </div>
         )}
 
-        {/* TABLES (RECON PC & SNAP & ALL) */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -265,7 +261,6 @@ function App() {
           </div>
         )}
 
-        {/* 1ST COUNT MOBILE FORM */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && locInfo.length > 0 && (
@@ -293,7 +288,6 @@ function App() {
           </div>
         )}
 
-        {/* 2ND COUNT MOBILE TASK */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
@@ -353,6 +347,7 @@ const boxInfoYellow = { ...boxInfo, background: '#fffbeb', border: '1px solid #f
 const boxTitle = { fontWeight: '900', fontSize: '0.55rem', marginBottom: '5px', color: '#1e40af' };
 const infoLine = { borderBottom: '1px solid #e2e8f0', padding: '5px 0' };
 const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
+const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
