@@ -243,43 +243,48 @@ function App() {
         )}
 
         {/* DYNAMIC TABLES PC */}
-        {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
-          <div style={tableWrapper}>
-            <table style={tableStyle}>
-              <thead>
-                <tr style={{ background: '#fafafa' }}>
-                  <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
-                  {activeMenu === 'Snapshoot' ? (
-                     <><th style={thStyle}>QTY_SNAP</th><th style={thStyle}>DESCRIPTION</th></>
-                  ) : activeMenu === 'Reconciliation' ? (
-                     <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
-                  ) : (
-                     <><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP</th><th style={thStyle}>OPERATOR</th></>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((row, i) => {
-                  const finalVal = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const diff = (row.final_status === 'MATCH') ? 0 : (finalVal - Number(row.qty_snap || 0));
-                  const isDiff = activeMenu === 'Reconciliation' && diff !== 0;
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #eee', background: isDiff ? '#fff1f1' : 'transparent' }}>
-                      <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
-                      {activeMenu === 'Snapshoot' ? (
-                        <><td style={tdStyle}>{row.qty_snap}</td><td style={{...tdStyle, fontSize:'0.65rem', textAlign:'right', color:'#999'}}>{row.description || '-'}</td></>
-                      ) : activeMenu === 'Reconciliation' ? (
-                        <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, fontWeight:800, fontSize:'0.6rem'}}>{row.final_status}</td><td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight: '900' }}>{diff > 0 ? `+${diff}` : diff}</td><td style={{...tdStyle, fontSize:'0.65rem', textAlign:'right', color:'#999'}}>{row.description || '-'}</td></>
-                      ) : (
-                        <><td style={{...tdStyle, fontSize:'0.65rem', color:'#666'}}>{row.description || '-'}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.created_at || row.timestamp)}</td><td style={tdStyle}>{row.operator || '-'}</td></>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        /* ================= DYNAMIC TABLES PC ================= */
+{((!isMobile) || (isMobile && activeMenu === 'Reconciliation')) && (
+  <div style={tableWrapper}>
+    <table style={tableStyle}>
+      <thead>
+        <tr style={{ background: '#fafafa' }}>
+          {/* LOGIKA HEADER DYNAMIS */}
+          {activeMenu === 'Master Lokasi' ? (
+             <><th style={thStyle}>LOKASI ID</th><th style={thStyle}>ZONE</th><th style={thStyle}>AREA</th></>
+          ) : activeMenu === 'Snapshoot' ? (
+             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY_SNAP</th><th style={thStyle}>DESCRIPTION</th></>
+          ) : activeMenu === 'Reconciliation' ? (
+             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
+          ) : (
+             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP</th><th style={thStyle}>OPERATOR</th></>
+          )}
+        </tr>
+      </thead>
+      <tbody>
+        {data.map((row, i) => {
+          const finalVal = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+          const diff = (row.final_status === 'MATCH') ? 0 : (finalVal - Number(row.qty_snap || 0));
+          const isDiff = activeMenu === 'Reconciliation' && diff !== 0;
+          
+          return (
+            <tr key={i} style={{ borderBottom: '1px solid #eee', background: isDiff ? '#fff1f1' : 'transparent' }}>
+              {activeMenu === 'Master Lokasi' ? (
+                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone_name || '-'}</td><td style={tdStyle}>{row.area_name || '-'}</td></>
+              ) : activeMenu === 'Snapshoot' ? (
+                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={{...tdStyle, fontSize:'0.65rem', textAlign:'right', color:'#999'}}>{row.description || '-'}</td></>
+              ) : activeMenu === 'Reconciliation' ? (
+                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, fontWeight:800, fontSize:'0.6rem'}}>{row.final_status}</td><td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight: '900' }}>{diff > 0 ? `+${diff}` : diff}</td><td style={{...tdStyle, fontSize:'0.65rem', textAlign:'right', color:'#999'}}>{row.description || '-'}</td></>
+              ) : (
+                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={{...tdStyle, fontSize:'0.65rem', color:'#666'}}>{row.description || '-'}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.created_at || row.timestamp)}</td><td style={tdStyle}>{row.operator || '-'}</td></>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+)}
 
         {/* 2ND COUNT MOBILE */}
         {isMobile && activeMenu === '2nt Count' && (
