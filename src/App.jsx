@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import {
@@ -29,10 +29,6 @@ function App() {
   const [locInfo, setLocInfo] = useState(null);
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
   const [showCompletePopup, setShowCompletePopup] = useState(false);
-
-  /* Refs for Auto-Focus */
-  const artRef = useRef(null);
-  const qtyRef = useRef(null);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
@@ -133,7 +129,7 @@ function App() {
   const badge1st = (window.reconBadgeData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconBadgeData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
-  /* ================= LOGIN UI ================= */
+  /* ================= UI RENDERING ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -147,7 +143,6 @@ function App() {
     );
   }
 
-  /* ================= MOBILE HOME UI ================= */
   if (isMobile && showMobileHome) {
     return (
       <div style={mobileHomeLayout}>
@@ -165,14 +160,13 @@ function App() {
             <BarChart3 size={28} /> <span style={menuText}>Reconcile</span>
           </div>
         </div>
-        <button onClick={()=>setIsLoggedIn(false)} style={btnLogoutMobile}><LogOut size={16} /> Logout</button>
+        <button onClick={()=>setIsLoggedIn(false)} style={btnLogoutMobile}><LogOut size={16} /> Logout System</button>
       </div>
     );
   }
 
   return (
     <div style={mainLayout}>
-      {/* POPUP X BESAR */}
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}><XCircle size={100} color="#ef4444" /><h2 style={{fontWeight:900, marginTop:20}}>LOKASI COMPLETE</h2><p style={{fontSize:'0.8rem', marginTop:10}}>Semua artikel di lokasi ini sudah selesai dihitung.</p></div>
@@ -212,7 +206,7 @@ function App() {
                 )}
                 {activeMenu === 'Reconciliation' && <button onClick={() => {
                    const ws = XLSX.utils.json_to_sheet(data.map(r => {
-                      const finalVal = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(row.qty_1st || 0);
+                      const finalVal = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
                       const diff = (r.final_status === 'MATCH') ? 0 : (finalVal - Number(r.qty_snap || 0));
                       return { ...r, DIFF: diff };
                    }));
@@ -242,12 +236,12 @@ function App() {
               const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
               const needs = (window.reconBadgeData || []).filter(d => d.location_id?.toUpperCase() === v && d.final_status === 'NEED 1ST COUNT');
               if (items.length > 0 && needs.length === 0) { setShowCompletePopup(true); setMobLoc(''); } 
-              else { setLocInfo(items); if(v.length >= 4) artRef.current?.focus(); }
+              else { setLocInfo(items); }
             }} />
             <label style={labelStyle}>SCAN ARTIKEL</label>
-            <input ref={artRef} value={mobArt} style={mInput} onChange={e => { setMobArt(e.target.value.toUpperCase()); if(e.target.value.length >= 6) qtyRef.current?.focus(); }} />
+            <input value={mobArt} style={mInput} onChange={e => setMobArt(e.target.value.toUpperCase())} />
             <label style={labelStyle}>INPUT QTY</label>
-            <input ref={qtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} />
+            <input type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
@@ -291,7 +285,7 @@ function App() {
           </div>
         )}
 
-        {/* MASTER LOKASI GRID PC */}
+        {/* GRID MASTER LOKASI (PC) */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px,1fr))', gap:15}}>
             {data.map(row => (
@@ -342,7 +336,7 @@ const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowX:
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '12px 10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
 const tdStyle = { padding: '12px 10px' };
-const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '6px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
+const mInput = { width: '100%', padding: '10px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '6px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '6px', fontWeight: '800', cursor: 'pointer' };
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
