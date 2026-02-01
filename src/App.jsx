@@ -39,10 +39,12 @@ function App() {
   /* ================= UTILS ================= */
   const formatWIB = (ts) => {
     if (!ts) return '-';
-    return new Date(ts).toLocaleString('id-ID', { 
-      timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
+    try {
+      return new Date(ts).toLocaleString('id-ID', { 
+        timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    } catch (e) { return '-'; }
   };
 
   /* ================= FETCH ================= */
@@ -54,9 +56,12 @@ function App() {
         '1st Count': 'first', '2nt Count': isMobile ? 'recon' : 'second', 'Reconciliation': 'recon'
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
-      setData(res.data.data || []);
+      const resultData = res.data.data || [];
+      setData(resultData);
+
       const resSnap = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
       setSnapData(resSnap.data.data || []);
+
       const resRecon = await axios.get(`${API_BASE}?action=get_data&target=recon`);
       window.reconCacheData = resRecon.data.data || [];
     } catch (e) { setData([]); }
@@ -89,16 +94,8 @@ function App() {
     const artU = mobArt.trim().toUpperCase();
 
     if (activeMenu === '1st Count') {
-      const resFirst = await axios.get(`${API_BASE}?action=get_data&target=first`);
-      if ((resFirst.data.data || []).some(d => d.location_id?.toUpperCase() === locU && d.artikel?.toUpperCase() === artU)) {
-        return alert("SUDAH DI INPUT!");
-      }
-    }
-
-    if (activeMenu === '2nt Count' && selectedLoc2nd) {
-      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return alert("VALIDASI GAGAL! LOKASI/ARTIKEL TIDAK SESUAI TARGET");
-      }
+      const isExist = (data || []).some(d => d.location_id?.toUpperCase() === locU && d.artikel?.toUpperCase() === artU);
+      if (isExist) return alert("SUDAH DI INPUT!");
     }
 
     setLoading(true);
@@ -106,10 +103,18 @@ function App() {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      alert("TERSIMPAN"); setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
+      alert("TERSIMPAN"); setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null);
       fetchData();
     } catch (e) { alert("GAGAL"); }
     finally { setLoading(false); }
+  };
+
+  const handleToggle = async (uid, current) => {
+    const nextStatus = current === 'open' ? 'closed' : 'open';
+    try {
+      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
+      fetchData();
+    } catch (e) { alert("TOGGLE GAGAL"); }
   };
 
   const handleLogin = async () => {
@@ -122,6 +127,7 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
+  /* ================= UI LOGIC ================= */
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
@@ -164,7 +170,7 @@ function App() {
     <div style={mainLayout}>
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
-          <div style={popupContent}><XCircle size={100} color="#ef4444" /><h2 style={{fontWeight:900, marginTop:15}}>LOKASI COMPLETE</h2><p style={{fontSize:'0.8rem'}}>Semua tugas di lokasi ini sudah selesai dihitung.</p></div>
+          <div style={popupContent}><XCircle size={100} color="#ef4444" /><h2 style={{fontWeight:900, marginTop:15}}>LOKASI COMPLETE</h2><p style={{fontSize:'0.7rem'}}>Semua tugas di lokasi ini sudah selesai dihitung.</p></div>
         </div>
       )}
 
@@ -202,7 +208,8 @@ function App() {
                 {activeMenu === 'Reconciliation' && <button onClick={() => {
                    const ws = XLSX.utils.json_to_sheet(data.map(r => {
                       const finalVal = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                      return { ...r, DIFF: (r.final_status === 'MATCH' ? 0 : (finalVal - Number(r.qty_snap || 0))) };
+                      const diff = (r.final_status === 'MATCH') ? 0 : (finalVal - Number(r.qty_snap || 0));
+                      return { ...r, DIFF: diff };
                    }));
                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
                    XLSX.writeFile(wb, "COOL_RECON.xlsx");
@@ -219,14 +226,15 @@ function App() {
             {data.map(row => (
               <div key={row.unique_id} style={cardGrid}>
                 <span style={{ fontWeight: '800', marginBottom: '5px' }}>{row.unique_id}</span>
-                <div onClick={async() => {await axios.post(`${API_BASE}?action=assign_location`, { unique_id: row.unique_id, status: row.assign === 'open' ? 'closed' : 'open' }); fetchData();}} 
-                     style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
+                  <div style={toggleCircle(row.assign === 'open')} />
+                </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* TABLES (PC & RECON MOBILE) */}
+        {/* TABLES (RECON PC & SNAP & ALL) */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -271,17 +279,11 @@ function App() {
             <label style={labelStyle}>SCAN LOKASI</label>
             <input value={mobLoc} style={mInput} onChange={e => {
               const v = e.target.value.toUpperCase(); setMobLoc(v);
-              // Filter snapshot data untuk box info
               const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
-              // Cek sisa tugas di recon data (termasuk yang artikel 0 snap 0)
               const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && (d.final_status === 'NEED 1ST COUNT' || d.final_status === 'NEED 2ND COUNT'));
-              
-              // FIX LOGIC POPUP: Jika lokasi ada di Master/Snap tapi di recon sudah beres (tidak ada NEED)
               if (v.length > 0 && needs.length === 0 && (items.length > 0 || (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v))) { 
                 setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); 
-              } else { 
-                setLocInfo(items.length > 0 ? items : null); 
-              }
+              } else { setLocInfo(items.length > 0 ? items : null); }
             }} />
             <label style={labelStyle}>SCAN ARTIKEL</label>
             <input value={mobArt} style={mInput} onChange={e => setMobArt(e.target.value.toUpperCase())} />
@@ -291,7 +293,7 @@ function App() {
           </div>
         )}
 
-        {/* 2ND COUNT MOBILE FORM */}
+        {/* 2ND COUNT MOBILE TASK */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
