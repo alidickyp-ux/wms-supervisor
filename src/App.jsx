@@ -229,7 +229,7 @@ function App() {
         {activeMenu === 'Master Lokasi' && (
           <div style={gridContainer(isMobile)}>
             {data.map(row => (
-              <div key={row.unique_id || row.location_id} style={cardGrid}>
+              <div key={row.unique_id || row.unique_id_id} style={cardGrid}>
                 <span style={{ fontWeight: '800', fontSize: '0.7rem', marginBottom: '5px' }}>{row.unique_id_id}</span>
                 <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
                   <div style={toggleCircle(row.assign === 'open')} />
