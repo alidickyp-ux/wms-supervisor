@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import {
@@ -32,6 +32,11 @@ function App() {
 
   /* Modern Notification State */
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+
+  /* REFS FOR AUTO-FOCUS */
+  const inputLocRef = useRef(null);
+  const inputArtRef = useRef(null);
+  const inputQtyRef = useRef(null);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   useEffect(() => {
@@ -118,6 +123,8 @@ function App() {
       showToast("Data Saved Successfully!"); 
       setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
       fetchData();
+      // Reset Focus ke input pertama setelah save
+      if(inputLocRef.current) inputLocRef.current.focus();
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
   };
@@ -147,7 +154,7 @@ function App() {
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
-  // --- LOGIN PAGE ---
+  // LOGIN PAGE
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -169,7 +176,7 @@ function App() {
     );
   }
 
-  // --- MOBILE HOME ---
+  // MOBILE HOME
   if (isMobile && showMobileHome) {
     return (
       <div style={mobileHomeLayout}>
@@ -302,40 +309,73 @@ function App() {
           </div>
         )}
 
-        {/* MOBILE FORMS */}
+        {/* MOBILE FORMS - 1ST COUNT */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && locInfo.length > 0 && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REFERENCE ({mobLoc})</div>
                 {locInfo.map((item, idx) => (
-                  <div key={idx} style={infoLine}><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>{item.description || '-'}</span><br/>Snap Qty: <b>{item.qty_snap}</b></div>
+                  <div key={idx} style={infoLine}>
+                    <b>{item.artikel}</b><br/>
+                    <span style={{fontSize:'0.6rem', color:'#666'}}>{item.description || 'No Description'}</span><br/>
+                    Snap Qty: <b>{item.qty_snap}</b>
+                  </div>
                 ))}
               </div>
             )}
             <label style={labelStyle}>SCAN LOKASI</label>
-            <input value={mobLoc} style={mInput} onChange={e => {
-              const v = e.target.value.toUpperCase(); setMobLoc(v);
-              const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
-              const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && (d.final_status === 'NEED 1ST COUNT' || d.final_status === 'NEED 2ND COUNT'));
-              if (v.length > 0 && needs.length === 0 && (items.length > 0 || (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v))) { 
-                setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); 
-              } else { setLocInfo(items.length > 0 ? items : null); }
-            }} />
+            <input 
+              ref={inputLocRef}
+              value={mobLoc} 
+              style={mInput} 
+              autoFocus
+              onChange={e => {
+                const v = e.target.value.toUpperCase(); setMobLoc(v);
+                const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
+                const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && (d.final_status === 'NEED 1ST COUNT' || d.final_status === 'NEED 2ND COUNT'));
+                if (v.length > 0 && needs.length === 0 && (items.length > 0 || (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v))) { 
+                  setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); 
+                } else { 
+                  setLocInfo(items.length > 0 ? items : null);
+                  // AUTO JUMP: Jika lokasi valid ditemukan, pindah ke artikel
+                  if(items.length > 0) setTimeout(() => inputArtRef.current?.focus(), 100);
+                }
+              }} 
+            />
             <label style={labelStyle}>SCAN ARTIKEL</label>
-            <input value={mobArt} style={mInput} onChange={e => setMobArt(e.target.value.toUpperCase())} />
+            <input 
+              ref={inputArtRef}
+              value={mobArt} 
+              style={mInput} 
+              onChange={e => {
+                const v = e.target.value.toUpperCase();
+                setMobArt(v);
+                // AUTO JUMP: Jika artikel sudah discan (panjang > 3), pindah ke qty
+                if(v.length >= 3) setTimeout(() => inputQtyRef.current?.focus(), 100);
+              }} 
+            />
             <label style={labelStyle}>INPUT QTY</label>
-            <input type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} />
+            <input 
+              ref={inputQtyRef}
+              type="number" 
+              style={qtyInput} 
+              value={mobQty} 
+              onChange={e => setMobQty(e.target.value)} 
+            />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
 
+        {/* MOBILE FORMS - 2ND COUNT */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
                 setSelectedLoc2nd(f); setMobArt(''); setMobLoc('');
+                // Pindah ke input lokasi setelah pilih dropdown
+                setTimeout(() => inputLocRef.current?.focus(), 100);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
                 {(window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').map((t, i) => (
@@ -344,10 +384,38 @@ function App() {
               </select>
               {selectedLoc2nd && (
                 <div style={formWrapper}>
-                  <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>{selectedLoc2nd.description || 'No Desc'}<br/>Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}</div>
-                  <input placeholder="Validasi Lokasi" value={mobLoc} style={mInput} onChange={e => setMobLoc(e.target.value.toUpperCase())} />
-                  <input placeholder="Validasi Artikel" value={mobArt} style={mInput} onChange={e => setMobArt(e.target.value.toUpperCase())} />
-                  <input type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} />
+                  <div style={boxInfoYellow}>
+                    <b>{selectedLoc2nd.artikel}</b><br/>
+                    <span style={{fontSize:'0.6rem'}}>{selectedLoc2nd.description || 'No Description'}</span><br/>
+                    Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}
+                  </div>
+                  <input 
+                    ref={inputLocRef}
+                    placeholder="Validasi Lokasi" 
+                    value={mobLoc} 
+                    style={mInput} 
+                    onChange={e => {
+                      const v = e.target.value.toUpperCase(); setMobLoc(v);
+                      if(v === selectedLoc2nd.location_id.toUpperCase()) inputArtRef.current?.focus();
+                    }} 
+                  />
+                  <input 
+                    ref={inputArtRef}
+                    placeholder="Validasi Artikel" 
+                    value={mobArt} 
+                    style={mInput} 
+                    onChange={e => {
+                      const v = e.target.value.toUpperCase(); setMobArt(v);
+                      if(v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
+                    }} 
+                  />
+                  <input 
+                    ref={inputQtyRef}
+                    type="number" 
+                    style={qtyInput} 
+                    value={mobQty} 
+                    onChange={e => setMobQty(e.target.value)} 
+                  />
                   <button onClick={handleSaveInput} style={{...btnBlack, background:'#eab308'}}>SAVE 2ND COUNT</button>
                 </div>
               )}
@@ -358,12 +426,12 @@ function App() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLES (Lexend & Small Font 0.7rem) ================= */
 const toastStyle = (type) => ({
   position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
   backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff',
   padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999,
-  boxShadow: '0 4px 15px rgba(0,0,0,0.2)', fontSize: '0.75rem', animation: 'slideDown 0.3s ease-out'
+  boxShadow: '0 4px 15px rgba(0,0,0,0.2)', fontSize: '0.75rem'
 });
 
 const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
