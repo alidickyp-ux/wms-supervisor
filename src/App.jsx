@@ -61,6 +61,11 @@ function App() {
     } catch (e) { return '-'; }
   };
 
+  // Helper untuk mencari deskripsi dari berbagai kemungkinan nama kolom
+  const getDesc = (item) => {
+    return item.description || item.DESCRIPTION || item.desc || item.DESC || item.nama_barang || item.NAMA_BARANG || '-';
+  };
+
   /* ================= FETCH ================= */
   const fetchData = async () => {
     setLoading(true);
@@ -123,8 +128,7 @@ function App() {
       showToast("Data Saved Successfully!"); 
       setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
       fetchData();
-      // Reset Focus ke input pertama setelah save
-      if(inputLocRef.current) inputLocRef.current.focus();
+      setTimeout(() => inputLocRef.current?.focus(), 200);
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
   };
@@ -154,7 +158,6 @@ function App() {
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
-  // LOGIN PAGE
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -176,7 +179,6 @@ function App() {
     );
   }
 
-  // MOBILE HOME
   if (isMobile && showMobileHome) {
     return (
       <div style={mobileHomeLayout}>
@@ -212,7 +214,7 @@ function App() {
           <div style={popupContent}>
             <XCircle size={80} color="#ef4444" strokeWidth={3} />
             <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI COMPLETE</h2>
-            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Tugas penghitungan di lokasi ini sudah selesai.</p>
+            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Selesai / Sudah dihitung.</p>
             <button style={{...btnBlack, marginTop:25, width:'120px'}} onClick={()=>setShowCompletePopup(false)}>OK</button>
           </div>
         </div>
@@ -264,7 +266,7 @@ function App() {
           </div>
         </header>
 
-        {/* PC GRID MASTER */}
+        {/* ================= DESKTOP CONTENT ================= */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {data.map(row => (
@@ -278,8 +280,7 @@ function App() {
           </div>
         )}
 
-        {/* TABLES */}
-        {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
+        {!isMobile && activeMenu !== 'Master Lokasi' && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
               <thead>
@@ -294,13 +295,12 @@ function App() {
                 {data.map((row, i) => {
                   const finalVal = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
                   const diff = (row.final_status === 'MATCH') ? 0 : (finalVal - Number(row.qty_snap || 0));
-                  const isDiff = activeMenu === 'Reconciliation' && diff !== 0;
                   return (
-                    <tr key={i} style={{ borderBottom: '1px solid #eee', background: isDiff ? '#fff1f1' : 'transparent' }}>
+                    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                       <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
-                      {activeMenu === 'Snapshoot' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={{...tdStyle, fontSize:'0.65rem', textAlign:'right', color:'#999'}}>{row.description || '-'}</td></>
-                      : activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, fontWeight:800, fontSize:'0.6rem'}}>{row.final_status}</td><td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight: '900' }}>{diff > 0 ? `+${diff}` : diff}</td><td style={{...tdStyle, fontSize:'0.65rem', textAlign:'right', color:'#999'}}>{row.description || '-'}</td></>
-                      : <><td style={{...tdStyle, fontSize:'0.65rem', color:'#666'}}>{row.description || '-'}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.created_at || row.timestamp)}</td><td style={tdStyle}>{row.operator || '-'}</td></>}
+                      {activeMenu === 'Snapshoot' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                      : activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, fontWeight:800}}>{row.final_status}</td><td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight: '900' }}>{diff > 0 ? `+${diff}` : diff}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                      : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.created_at || row.timestamp)}</td><td style={tdStyle}>{row.operator || '-'}</td></>}
                     </tr>
                   );
                 })}
@@ -309,7 +309,7 @@ function App() {
           </div>
         )}
 
-        {/* MOBILE FORMS - 1ST COUNT */}
+        {/* ================= MOBILE CONTENT ================= */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && locInfo.length > 0 && (
@@ -318,7 +318,7 @@ function App() {
                 {locInfo.map((item, idx) => (
                   <div key={idx} style={infoLine}>
                     <b>{item.artikel}</b><br/>
-                    <span style={{fontSize:'0.6rem', color:'#666'}}>{item.description || 'No Description'}</span><br/>
+                    <span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>
                     Snap Qty: <b>{item.qty_snap}</b>
                   </div>
                 ))}
@@ -326,55 +326,44 @@ function App() {
             )}
             <label style={labelStyle}>SCAN LOKASI</label>
             <input 
-              ref={inputLocRef}
-              value={mobLoc} 
-              style={mInput} 
-              autoFocus
+              ref={inputLocRef} value={mobLoc} style={mInput} autoFocus
               onChange={e => {
                 const v = e.target.value.toUpperCase(); setMobLoc(v);
                 const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
                 const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && (d.final_status === 'NEED 1ST COUNT' || d.final_status === 'NEED 2ND COUNT'));
                 if (v.length > 0 && needs.length === 0 && (items.length > 0 || (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v))) { 
                   setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); 
-                } else { 
-                  setLocInfo(items.length > 0 ? items : null);
-                  // AUTO JUMP: Jika lokasi valid ditemukan, pindah ke artikel
-                  if(items.length > 0) setTimeout(() => inputArtRef.current?.focus(), 100);
+                } else if (items.length > 0) { 
+                  setLocInfo(items);
+                  setTimeout(() => inputArtRef.current?.focus(), 100);
                 }
               }} 
             />
             <label style={labelStyle}>SCAN ARTIKEL</label>
             <input 
-              ref={inputArtRef}
-              value={mobArt} 
-              style={mInput} 
+              ref={inputArtRef} value={mobArt} style={mInput}
               onChange={e => {
-                const v = e.target.value.toUpperCase();
-                setMobArt(v);
-                // AUTO JUMP: Jika artikel sudah discan (panjang > 3), pindah ke qty
-                if(v.length >= 3) setTimeout(() => inputQtyRef.current?.focus(), 100);
-              }} 
+                const v = e.target.value.toUpperCase(); setMobArt(v);
+                if(v.length >= 12) setTimeout(() => inputQtyRef.current?.focus(), 100);
+              }}
+              onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); inputQtyRef.current?.focus(); } }}
             />
             <label style={labelStyle}>INPUT QTY</label>
             <input 
-              ref={inputQtyRef}
-              type="number" 
-              style={qtyInput} 
-              value={mobQty} 
+              ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} 
               onChange={e => setMobQty(e.target.value)} 
+              onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }}
             />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
 
-        {/* MOBILE FORMS - 2ND COUNT */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
                 setSelectedLoc2nd(f); setMobArt(''); setMobLoc('');
-                // Pindah ke input lokasi setelah pilih dropdown
                 setTimeout(() => inputLocRef.current?.focus(), 100);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
@@ -386,54 +375,50 @@ function App() {
                 <div style={formWrapper}>
                   <div style={boxInfoYellow}>
                     <b>{selectedLoc2nd.artikel}</b><br/>
-                    <span style={{fontSize:'0.6rem'}}>{selectedLoc2nd.description || 'No Description'}</span><br/>
+                    <span style={{fontSize:'0.6rem'}}>{getDesc(selectedLoc2nd)}</span><br/>
                     Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}
                   </div>
-                  <input 
-                    ref={inputLocRef}
-                    placeholder="Validasi Lokasi" 
-                    value={mobLoc} 
-                    style={mInput} 
-                    onChange={e => {
-                      const v = e.target.value.toUpperCase(); setMobLoc(v);
-                      if(v === selectedLoc2nd.location_id.toUpperCase()) inputArtRef.current?.focus();
-                    }} 
-                  />
-                  <input 
-                    ref={inputArtRef}
-                    placeholder="Validasi Artikel" 
-                    value={mobArt} 
-                    style={mInput} 
-                    onChange={e => {
-                      const v = e.target.value.toUpperCase(); setMobArt(v);
-                      if(v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
-                    }} 
-                  />
-                  <input 
-                    ref={inputQtyRef}
-                    type="number" 
-                    style={qtyInput} 
-                    value={mobQty} 
-                    onChange={e => setMobQty(e.target.value)} 
-                  />
+                  <input ref={inputLocRef} placeholder="Validasi Lokasi" value={mobLoc} style={mInput} onChange={e => {
+                    const v = e.target.value.toUpperCase(); setMobLoc(v);
+                    if(v === selectedLoc2nd.location_id.toUpperCase()) inputArtRef.current?.focus();
+                  }} />
+                  <input ref={inputArtRef} placeholder="Validasi Artikel" value={mobArt} style={mInput} onChange={e => {
+                    const v = e.target.value.toUpperCase(); setMobArt(v);
+                    if(v.length >= 12 || v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
+                  }} onKeyDown={e => { if(e.key === 'Enter') inputQtyRef.current?.focus(); }} />
+                  <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
                   <button onClick={handleSaveInput} style={{...btnBlack, background:'#eab308'}}>SAVE 2ND COUNT</button>
                 </div>
               )}
            </div>
+        )}
+
+        {isMobile && activeMenu === 'Reconciliation' && (
+          <div style={tableWrapper}>
+            <table style={tableStyle}>
+              <thead><tr style={{ background: '#fafafa' }}><th style={thStyle}>LOK</th><th style={thStyle}>ART</th><th style={thStyle}>DIFF</th></tr></thead>
+              <tbody>
+                {data.map((row, i) => {
+                  const fv = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+                  const df = fv - Number(row.qty_snap || 0);
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
+                      <td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-/* ================= STYLES (Lexend & Small Font 0.7rem) ================= */
-const toastStyle = (type) => ({
-  position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
-  backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff',
-  padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999,
-  boxShadow: '0 4px 15px rgba(0,0,0,0.2)', fontSize: '0.75rem'
-});
-
+/* ================= STYLES ================= */
+const toastStyle = (type) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
 const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
@@ -442,8 +427,9 @@ const headerStyle = { display: 'flex', justifyContent: 'space-between', alignIte
 const navItem = (active) => ({ padding: '15px 20px', cursor: 'pointer', color: active ? '#000' : '#ccc', fontWeight: active ? '800' : '400' });
 const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowX: 'auto' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
-const thStyle = { padding: '12px 10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
-const tdStyle = { padding: '12px 10px' };
+const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
+const tdStyle = { padding: '10px' };
+const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999', textAlign: 'right' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { display:'flex', alignItems:'center', justifyContent:'center', width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer' };
@@ -451,11 +437,11 @@ const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 1
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
-const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
+const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
 const mobileHeader = { padding: '30px', textAlign: 'center', borderBottom: '1px solid #eee', width: '100%' };
 const mobileMenuGrid = { display: 'grid', gridTemplateColumns: '1fr', gap: '15px', padding: '20px', width: '100%', boxSizing: 'border-box' };
-const menuCard = { display: 'flex', alignItems: 'center', padding: '25px', border: '1px solid #eee', borderRadius: '12px', gap: '20px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', cursor: 'pointer' };
+const menuCard = { display: 'flex', alignItems: 'center', padding: '25px', border: '1px solid #eee', borderRadius: '12px', gap: '20px', cursor: 'pointer' };
 const menuText = { fontWeight: '900', fontSize: '1.1rem' };
 const btnLogoutMobile = { margin: '30px', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const formWrapper = { border: '1px solid #eee', padding: '15px', borderRadius: '8px', background: '#fafafa' };
@@ -469,6 +455,6 @@ const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', f
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
-const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
+const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px' };
 
 export default App;
