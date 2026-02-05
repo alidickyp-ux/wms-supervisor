@@ -33,7 +33,7 @@ function App() {
   /* Modern Notification State */
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* REFS FOR AUTO-FOCUS */
+  /* REFS FOR AUTO-FOCUS & NAVIGATION */
   const inputLocRef = useRef(null);
   const inputArtRef = useRef(null);
   const inputQtyRef = useRef(null);
@@ -61,9 +61,10 @@ function App() {
     } catch (e) { return '-'; }
   };
 
-  // Helper untuk mencari deskripsi dari berbagai kemungkinan nama kolom
+  // Helper Deskripsi (Prioritas 'description' huruf kecil sesuai Neon)
   const getDesc = (item) => {
-    return item.description || item.DESCRIPTION || item.desc || item.DESC || item.nama_barang || item.NAMA_BARANG || '-';
+    if (!item) return '-';
+    return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
   };
 
   /* ================= FETCH ================= */
@@ -76,8 +77,10 @@ function App() {
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(res.data.data || []);
+      
       const resSnap = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
       setSnapData(resSnap.data.data || []);
+      
       const resRecon = await axios.get(`${API_BASE}?action=get_data&target=recon`);
       window.reconCacheData = resRecon.data.data || [];
     } catch (e) { setData([]); }
@@ -163,7 +166,7 @@ function App() {
       <div style={loginPage}>
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
-          <div style={{background: '#000', color:'#fff', padding:'20px', borderRadius:'12px 12px 0 0'}}>
+          <div style={loginHeader}>
             <h2 style={{fontWeight:900, fontSize:'1.2rem', letterSpacing:'2px'}}>COOL SYSTEM</h2>
             <p style={{fontSize:'0.6rem', opacity:0.7, marginTop:'5px'}}>LOGISTICS MANAGEMENT</p>
           </div>
@@ -266,7 +269,7 @@ function App() {
           </div>
         </header>
 
-        {/* ================= DESKTOP CONTENT ================= */}
+        {/* ================= DESKTOP VIEW ================= */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {data.map(row => (
@@ -309,7 +312,7 @@ function App() {
           </div>
         )}
 
-        {/* ================= MOBILE CONTENT ================= */}
+        {/* ================= MOBILE VIEW ================= */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && locInfo.length > 0 && (
@@ -438,6 +441,7 @@ const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', 
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
 const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden' };
+const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
 const mobileHeader = { padding: '30px', textAlign: 'center', borderBottom: '1px solid #eee', width: '100%' };
 const mobileMenuGrid = { display: 'grid', gridTemplateColumns: '1fr', gap: '15px', padding: '20px', width: '100%', boxSizing: 'border-box' };
