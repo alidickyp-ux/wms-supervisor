@@ -30,8 +30,6 @@ function App() {
   const [locInfo, setLocInfo] = useState(null);
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
   const [showCompletePopup, setShowCompletePopup] = useState(false);
-
-  /* Notification State */
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
   /* REFS FOR AUTO-FOCUS */
@@ -90,6 +88,23 @@ function App() {
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
   /* ================= HANDLERS ================= */
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setLoading(true);
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
+        showToast("Snapshot Uploaded!"); fetchData();
+      } catch (err) { showToast("Upload Failed", "error"); }
+      finally { setLoading(false); e.target.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
@@ -100,7 +115,7 @@ function App() {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      showToast("Data Saved!"); 
+      showToast("Data Saved Successfully!"); 
       setMobLoc(''); setMobArt(''); setMobQty(''); 
       await fetchData();
       setTimeout(() => inputLocRef.current?.focus(), 200);
@@ -219,26 +234,43 @@ function App() {
             <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {!isMobile && activeMenu === 'Reconciliation' && (
-              <button onClick={() => {
-                const ws = XLSX.utils.json_to_sheet(data.map(r => {
-                   const fv = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                   return { ...r, DIFF: fv - Number(r.qty_snap || 0) };
-                }));
-                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
-                XLSX.writeFile(wb, "COOL_RECON.xlsx");
-              }} style={{...btnWhite, background:'#16a34a', color:'#fff'}}><Download size={12}/> EXPORT RECON</button>
+            {/* --- TOMBOL SAKTI PC AREA --- */}
+            {!isMobile && (
+              <>
+                {activeMenu === 'Snapshoot' && (
+                  <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
+                  <button onClick={() => { if(window.confirm("Clear all Snapshots?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                )}
+                {['1st Count', '2nt Count'].includes(activeMenu) && (
+                  <><button onClick={() => {
+                    const ws = XLSX.utils.json_to_sheet(data.map(r => ({ ...r, timestamp: formatWIB(r.timestamp) })));
+                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
+                    XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
+                  }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
+                  <button onClick={() => { if(window.confirm("Clear this data?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                )}
+                {activeMenu === 'Reconciliation' && (
+                  <button onClick={() => {
+                    const ws = XLSX.utils.json_to_sheet(data.map(r => {
+                       const fv = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+                       return { ...r, DIFF: fv - Number(r.qty_snap || 0) };
+                    }));
+                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
+                    XLSX.writeFile(wb, "COOL_RECON.xlsx");
+                  }} style={{...btnWhite, background:'#16a34a', color:'#fff'}}><Download size={12}/> EXPORT RECON</button>
+                )}
+              </>
             )}
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
         </header>
 
-        {/* SEARCH BAR (Hanya di menu data) */}
+        {/* SEARCH BAR (All Data Menus) */}
         {['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
             <input 
-              placeholder="Search data..." 
+              placeholder="Search by location, SKU, or name..." 
               style={searchInput} 
               value={searchTerm} 
               onChange={e => setSearchTerm(e.target.value)} 
@@ -246,7 +278,7 @@ function App() {
           </div>
         )}
 
-        {/* --- DESKTOP GRID MASTER --- */}
+        {/* --- DESKTOP MASTER GRID --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {data.map(row => (
@@ -260,7 +292,7 @@ function App() {
           </div>
         )}
 
-        {/* --- TABLES (SAMA ANTARA PC & MOBILE KHUSUS RECONCILIATION) --- */}
+        {/* --- TABLES (PC & MOBILE RECON) --- */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -269,7 +301,7 @@ function App() {
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESCRIPTION</th></>
                   : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
-                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>OPERATOR</th></>}
+                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP</th><th style={thStyle}>OP</th></>}
                 </tr>
               </thead>
               <tbody>
@@ -281,7 +313,7 @@ function App() {
                       <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
                       {activeMenu === 'Snapshoot' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                       : activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st || 0}</td><td style={tdStyle}>{row.qty_2nd || 0}</td><td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
-                      : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>}
+                      : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.timestamp)}</td><td style={tdStyle}>{row.operator}</td></>}
                     </tr>
                   );
                 })}
@@ -300,7 +332,6 @@ function App() {
                   <div style={infoLine}><b>NO SNAPSHOT DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Qty: 0</span></div>
                 ) : (
                   locInfo.map((item, idx) => {
-                    // Cek jika artikel ini sudah di-scan di lokasi ini pada sesi hitung 1st
                     const isAlreadyScanned = data.some(d => 
                       d.location_id?.toUpperCase() === mobLoc.toUpperCase() && 
                       d.artikel?.toUpperCase() === item.artikel?.toUpperCase()
@@ -332,9 +363,7 @@ function App() {
                 } else if (v.length > 0) { 
                   setLocInfo(items.length > 0 ? items : []);
                   if(items.length > 0) setTimeout(() => inputArtRef.current?.focus(), 100);
-                } else {
-                  setLocInfo(null);
-                }
+                } else { setLocInfo(null); }
               }} 
             />
             <label style={labelStyle}>SCAN ARTIKEL</label>
@@ -413,11 +442,11 @@ const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999', textA
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { display:'flex', alignItems:'center', justifyContent:'center', width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer' };
-const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5 };
+const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
-const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden' };
+const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
 const mobileHeader = { padding: '30px', textAlign: 'center', borderBottom: '1px solid #eee', width: '100%' };
@@ -436,7 +465,7 @@ const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', f
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
-const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px' };
+const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (type) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
 
 export default App;
