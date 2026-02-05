@@ -302,24 +302,44 @@ function App() {
               </thead>
               <tbody>
                 {filteredData.map((row, i) => {
-                  // LOGIKA DIFF: Ambil hitung terakhir (2nd prioritaskan) dikurangi snap
-                  const lastCount = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const diff = lastCount - Number(row.qty_snap || 0);
-                  
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
-                      {activeMenu === 'Snapshoot' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
-                      : activeMenu === 'Reconciliation' ? (
-                        <>
-                          <td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st || 0}</td><td style={tdStyle}>{row.qty_2nd || 0}</td>
-                          <td style={{...tdStyle, fontWeight:800, fontSize:'0.6rem'}}>{row.final_status}</td>
-                          <td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight:900 }}>{diff > 0 ? `+${diff}` : diff}</td>
-                          <td style={tdDescSmall}>{getDesc(row)}</td>
-                        </>
-                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>}
-                    </tr>
-                  );
+  // 1. Tentukan nilai aktual yang digunakan (Prioritas 2nd Count, jika tidak ada pakai 1st)
+  const actualCount = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') 
+    ? Number(row.qty_2nd) 
+    : Number(row.qty_1st || 0);
+
+  // 2. PERBAIKAN LOGIKA DIFF: 
+  // Jika status MATCH, paksa selisih jadi 0. Jika tidak, baru hitung selisihnya.
+  const diffValue = (row.final_status === 'MATCH') 
+    ? 0 
+    : (actualCount - Number(row.qty_snap || 0));
+  
+  return (
+    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+      <td style={tdStyle}>{row.location_id}</td>
+      <td style={tdStyle}>{row.artikel}</td>
+      {activeMenu === 'Snapshoot' ? (
+        <><td style={tdStyle}>{row.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+      ) : activeMenu === 'Reconciliation' ? (
+        <>
+          <td style={tdStyle}>{row.qty_snap}</td>
+          <td style={tdStyle}>{row.qty_1st || 0}</td>
+          <td style={tdStyle}>{row.qty_2nd || 0}</td>
+          <td style={{...tdStyle, fontWeight: 800, fontSize: '0.6rem'}}>{row.final_status}</td>
+          {/* Tampilan DIFF yang sudah diperbaiki */}
+          <td style={{ 
+            ...tdStyle, 
+            color: diffValue !== 0 ? 'red' : 'green', 
+            fontWeight: 900 
+          }}>
+            {diffValue > 0 ? `+${diffValue}` : diffValue}
+          </td>
+          <td style={tdDescSmall}>{getDesc(row)}</td>
+        </>
+      ) : (
+        <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>
+      )}
+    </tr>
+  );
                 })}
               </tbody>
             </table>
