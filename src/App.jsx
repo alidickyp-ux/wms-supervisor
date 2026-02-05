@@ -253,8 +253,8 @@ function App() {
                 {activeMenu === 'Reconciliation' && (
                   <button onClick={() => {
                     const ws = XLSX.utils.json_to_sheet(data.map(r => {
-                       const fv = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                       return { ...r, DIFF: fv - Number(r.qty_snap || 0) };
+                       const actual = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+                       return { ...r, DIFF: actual - Number(r.qty_snap || 0) };
                     }));
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
                     XLSX.writeFile(wb, "COOL_RECON.xlsx");
@@ -266,7 +266,7 @@ function App() {
           </div>
         </header>
 
-        {/* SEARCH BAR (Hanya PC & Recon Mobile) */}
+        {/* SEARCH BAR (PC Semua Menu & Mobile Recon Only) */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
@@ -288,7 +288,7 @@ function App() {
           </div>
         )}
 
-        {/* --- 2. TABLES (SEMUA MENU PC & RECON MOBILE) --- */}
+        {/* --- 2. TABLES (SEMUA PC & RECON MOBILE) --- */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -297,13 +297,15 @@ function App() {
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESC</th></>
                   : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESC</th></>
-                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th><th style={thStyle}>OP</th></>}
+                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>OP</th></>}
                 </tr>
               </thead>
               <tbody>
                 {filteredData.map((row, i) => {
-                  const fv = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const df = fv - Number(row.qty_snap || 0);
+                  // LOGIKA DIFF: Ambil hitung terakhir (2nd prioritaskan) dikurangi snap
+                  const lastCount = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+                  const diff = lastCount - Number(row.qty_snap || 0);
+                  
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                       <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
@@ -312,10 +314,10 @@ function App() {
                         <>
                           <td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st || 0}</td><td style={tdStyle}>{row.qty_2nd || 0}</td>
                           <td style={{...tdStyle, fontWeight:800, fontSize:'0.6rem'}}>{row.final_status}</td>
-                          <td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td>
+                          <td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight:900 }}>{diff > 0 ? `+${diff}` : diff}</td>
                           <td style={tdDescSmall}>{getDesc(row)}</td>
                         </>
-                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.timestamp)}</td><td style={tdStyle}>{row.operator}</td></>}
+                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>}
                     </tr>
                   );
                 })}
@@ -406,7 +408,7 @@ function App() {
   );
 }
 
-/* ================= STYLES (Lexend 0.7rem) ================= */
+/* ================= STYLES ================= */
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 const circleCheck = { width: 18, height: 18, borderRadius: 9, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' };
