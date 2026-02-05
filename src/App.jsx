@@ -88,23 +88,6 @@ function App() {
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
   /* ================= HANDLERS ================= */
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      setLoading(true);
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        showToast("Snapshot Uploaded!"); fetchData();
-      } catch (err) { showToast("Upload Failed", "error"); }
-      finally { setLoading(false); e.target.value = ''; }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
@@ -151,7 +134,7 @@ function App() {
     (getDesc(item)?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
-  /* ================= UI RENDER ================= */
+  /* ================= UI LOGIC ================= */
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
@@ -161,7 +144,7 @@ function App() {
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
           <div style={loginHeader}>
-            <h2 style={{fontWeight:900, fontSize:'1.2rem'}}>COOL SYSTEM</h2>
+            <h2 style={{fontWeight:900, fontSize:'1.2rem', letterSpacing:'2px'}}>COOL SYSTEM</h2>
             <p style={{fontSize:'0.6rem', opacity:0.7}}>LOGISTICS MANAGEMENT</p>
           </div>
           <div style={{padding:'30px'}}>
@@ -267,7 +250,7 @@ function App() {
         {['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
-            <input placeholder="Search article or location..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input placeholder="Search article, location, or name..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         )}
 
@@ -284,6 +267,7 @@ function App() {
           </div>
         )}
 
+        {/* --- TABLES (PC & MOBILE RECON) --- */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -292,7 +276,7 @@ function App() {
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESCRIPTION</th></>
                   : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
-                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP</th><th style={thStyle}>OP</th></>}
+                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>OP</th></>}
                 </tr>
               </thead>
               <tbody>
@@ -310,7 +294,7 @@ function App() {
                           <td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td>
                           <td style={tdDescSmall}>{getDesc(row)}</td>
                         </>
-                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.timestamp)}</td><td style={tdStyle}>{row.operator}</td></>}
+                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>}
                     </tr>
                   );
                 })}
@@ -319,20 +303,29 @@ function App() {
           </div>
         )}
 
+        {/* --- MOBILE 1ST COUNT (REVISED LOGIC) --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REFERENCE ({mobLoc})</div>
                 {locInfo.length === 0 ? (
-                  <div style={infoLine}><b>NO SNAPSHOT DATA</b><br/><span style={{fontSize:'0.6rem'}}>Art: 0 | Desc: 0 | Qty: 0</span></div>
+                  <div style={infoLine}><b>NO SNAPSHOT DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap Qty: 0</span></div>
                 ) : (
                   locInfo.map((item, idx) => {
-                    const isAlreadyScanned = data.some(d => d.location_id?.toUpperCase() === mobLoc.toUpperCase() && d.artikel?.toUpperCase() === item.artikel?.toUpperCase());
+                    // FIX: Logika Centang
+                    const isAlreadyScanned = data.some(d => 
+                      String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && 
+                      String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase()
+                    );
                     return (
                       <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>Snap Qty: <b>{item.qty_snap}</b></div>
-                        {isAlreadyScanned && <div style={circleCheck}><Check size={12} color="#fff" /></div>}
+                        <div>
+                          <b>{item.artikel}</b><br/>
+                          <span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>
+                          Snap Qty: <b>{item.qty_snap}</b>
+                        </div>
+                        {isAlreadyScanned && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
                       </div>
                     );
                   })
@@ -340,28 +333,48 @@ function App() {
               </div>
             )}
             <label style={labelStyle}>SCAN LOKASI</label>
-            <input ref={inputLocRef} value={mobLoc} style={mInput} autoFocus onChange={e => {
-              const v = e.target.value.toUpperCase(); setMobLoc(v);
-              const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
-              const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && d.final_status?.includes('NEED'));
-              if (v.length > 0 && items.length > 0 && needs.length === 0 && (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v)) { 
-                setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); 
-              } else if (v.length > 0) { 
-                setLocInfo(items.length > 0 ? items : []);
-                if(items.length > 0) setTimeout(() => inputArtRef.current?.focus(), 100);
-              }
-            }} />
+            <input 
+              ref={inputLocRef} value={mobLoc} style={mInput} autoFocus
+              onChange={e => {
+                const v = e.target.value.toUpperCase(); setMobLoc(v);
+                const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
+                const needs = (window.reconCacheData || []).filter(d => String(d.location_id).toUpperCase() === v && d.final_status?.includes('NEED'));
+                
+                if (v.length > 0) {
+                  // FIX: Jika lokasi tidak ditemukan di snapData, tampilkan info 0 sesuai request
+                  setLocInfo(items.length > 0 ? items : []);
+                  
+                  // Popup jika lokasi sudah selesai (match)
+                  if (items.length > 0 && needs.length === 0 && (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v)) {
+                    setShowCompletePopup(true); setMobLoc(''); setLocInfo(null);
+                  } else if (items.length > 0) {
+                    setTimeout(() => inputArtRef.current?.focus(), 100);
+                  }
+                } else {
+                  setLocInfo(null);
+                }
+              }} 
+            />
             <label style={labelStyle}>SCAN ARTIKEL</label>
-            <input ref={inputArtRef} value={mobArt} style={mInput} onChange={e => {
-              const v = e.target.value.toUpperCase(); setMobArt(v);
-              if(v.length >= 12) setTimeout(() => inputQtyRef.current?.focus(), 100);
-            }} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); inputQtyRef.current?.focus(); } }} />
+            <input 
+              ref={inputArtRef} value={mobArt} style={mInput}
+              onChange={e => {
+                const v = e.target.value.toUpperCase(); setMobArt(v);
+                if(v.length >= 12) setTimeout(() => inputQtyRef.current?.focus(), 100);
+              }}
+              onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); inputQtyRef.current?.focus(); } }}
+            />
             <label style={labelStyle}>QTY</label>
-            <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
+            <input 
+              ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} 
+              onChange={e => setMobQty(e.target.value)} 
+              onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }}
+            />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
-
+        
+        {/* --- MOBILE 2ND COUNT --- */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
@@ -434,6 +447,7 @@ const boxInfoYellow = { ...boxInfo, background: '#fffbeb', border: '1px solid #f
 const boxTitle = { fontWeight: '900', fontSize: '0.55rem', marginBottom: '5px', color: '#1e40af' };
 const infoLine = { borderBottom: '1px solid #e2e8f0', padding: '5px 0' };
 const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
+const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
 const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
