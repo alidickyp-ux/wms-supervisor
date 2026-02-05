@@ -74,7 +74,8 @@ function App() {
         '1st Count': 'first', '2nt Count': isMobile ? 'recon' : 'second', 'Reconciliation': 'recon'
       };
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
-      setData(Array.isArray(res.data.data) ? res.data.data : []);
+      const rawData = Array.isArray(res.data.data) ? res.data.data : [];
+      setData(rawData);
       
       const resSnap = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
       setSnapData(Array.isArray(resSnap.data.data) ? resSnap.data.data : []);
@@ -123,6 +124,14 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const handleToggle = async (uid, current) => {
+    const nextStatus = current === 'open' ? 'closed' : 'open';
+    try {
+      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
+      fetchData();
+    } catch (e) { showToast("Update Failed", "error"); }
+  };
+
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
@@ -134,9 +143,9 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
-  /* ================= SEARCH LOGIC ================= */
+  /* ================= SEARCH FILTER LOGIC ================= */
   const filteredData = (data || []).filter(item => {
-    if (!item) return false;
+    if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
     return (
       String(item.location_id || '').toLowerCase().includes(s) ||
@@ -145,7 +154,7 @@ function App() {
     );
   });
 
-  /* ================= UI LOGIC ================= */
+  /* ================= UI RENDER ================= */
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
@@ -205,7 +214,6 @@ function App() {
           <div style={popupContent}>
             <CheckCircle2 size={80} color="#16a34a" strokeWidth={3} />
             <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI SELESAI</h2>
-            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Penghitungan di lokasi ini sudah sinkron / MATCH.</p>
             <button style={{...btnBlack, marginTop:25, width:'120px'}} onClick={()=>setShowCompletePopup(false)}>OK</button>
           </div>
         </div>
@@ -232,7 +240,7 @@ function App() {
               <>
                 {activeMenu === 'Snapshoot' && (
                   <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear All?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
                   <><button onClick={() => {
@@ -240,7 +248,7 @@ function App() {
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
                     XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
                   }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
-                  <button onClick={() => { if(window.confirm("Clear data?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {activeMenu === 'Reconciliation' && (
                   <button onClick={() => {
@@ -258,25 +266,38 @@ function App() {
           </div>
         </header>
 
-        {/* SEARCH BAR (Hanya di PC atau Recon Mobile, Tidak di 1st/2nd Mobile) */}
-        {((!isMobile && ['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu)) || 
-          (isMobile && activeMenu === 'Reconciliation')) && (
+        {/* SEARCH BAR (Hanya PC & Recon Mobile) */}
+        {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
             <input placeholder="Search data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         )}
 
-        {/* --- TABLES (SAMA ANTARA PC & MOBILE RECON) --- */}
-        {((!isMobile && activeMenu !== 'Master Lokasi' && !['1st Count', '2nt Count'].includes(activeMenu)) || (activeMenu === 'Reconciliation')) && (
+        {/* --- 1. MASTER LOKASI (PC ONLY) --- */}
+        {!isMobile && activeMenu === 'Master Lokasi' && (
+          <div style={gridContainer()}>
+            {(filteredData || []).map((row, idx) => (
+              <div key={idx} style={cardGrid}>
+                <span style={{ fontWeight: '800', marginBottom: '5px' }}>{row.unique_id}</span>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
+                  <div style={toggleCircle(row.assign === 'open')} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* --- 2. TABLES (SEMUA MENU PC & RECON MOBILE) --- */}
+        {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
-                  {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESCRIPTION</th></>
-                  : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
-                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>OP</th></>}
+                  {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESC</th></>
+                  : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESC</th></>
+                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th><th style={thStyle}>OP</th></>}
                 </tr>
               </thead>
               <tbody>
@@ -294,7 +315,7 @@ function App() {
                           <td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td>
                           <td style={tdDescSmall}>{getDesc(row)}</td>
                         </>
-                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>}
+                      ) : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.timestamp)}</td><td style={tdStyle}>{row.operator}</td></>}
                     </tr>
                   );
                 })}
@@ -303,25 +324,21 @@ function App() {
           </div>
         )}
 
-        {/* --- MOBILE 1ST COUNT --- */}
+        {/* --- 3. MOBILE 1ST COUNT --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REFERENCE ({mobLoc})</div>
                 {locInfo.length === 0 ? (
-                  <div style={infoLine}><b>NO SNAPSHOT DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap Qty: 0</span></div>
+                  <div style={infoLine}><b>NO SNAP DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap: 0</span></div>
                 ) : (
                   locInfo.map((item, idx) => {
-                    const isAlreadyScanned = data.some(d => String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
+                    const isDone = data.some(d => String(d.location_id) === mobLoc && String(d.artikel) === String(item.artikel));
                     return (
                       <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <div>
-                          <b>{item.artikel}</b><br/>
-                          <span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>
-                          Snap Qty: <b>{item.qty_snap}</b>
-                        </div>
-                        {isAlreadyScanned && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
+                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>Snap: <b>{item.qty_snap}</b></div>
+                        {isDone && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
                       </div>
                     );
                   })
@@ -350,8 +367,8 @@ function App() {
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
-
-        {/* --- MOBILE 2ND COUNT --- */}
+        
+        {/* --- 4. MOBILE 2ND COUNT --- */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
@@ -389,7 +406,7 @@ function App() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLES (Lexend 0.7rem) ================= */
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 const circleCheck = { width: 18, height: 18, borderRadius: 9, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' };
