@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import {
-  RefreshCw, FileSpreadsheet, Trash2, Database, LogOut, Upload,
+  RefreshCw, FileSpreadsheet, Trash2, Database, LogOut, Upload, Search,
   ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download, XCircle, 
-  CheckCircle2, AlertCircle, Loader2
+  CheckCircle2, AlertCircle, Loader2, Check
 } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
@@ -21,6 +21,7 @@ function App() {
   const [snapData, setSnapData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showMobileHome, setShowMobileHome] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
@@ -30,10 +31,10 @@ function App() {
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
   const [showCompletePopup, setShowCompletePopup] = useState(false);
 
-  /* Modern Notification State */
+  /* Notification State */
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* REFS FOR AUTO-FOCUS & NAVIGATION */
+  /* REFS FOR AUTO-FOCUS */
   const inputLocRef = useRef(null);
   const inputArtRef = useRef(null);
   const inputQtyRef = useRef(null);
@@ -61,7 +62,6 @@ function App() {
     } catch (e) { return '-'; }
   };
 
-  // Helper Deskripsi (Prioritas 'description' huruf kecil sesuai Neon)
   const getDesc = (item) => {
     if (!item) return '-';
     return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
@@ -90,47 +90,19 @@ function App() {
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
   /* ================= HANDLERS ================= */
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      setLoading(true);
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        showToast("Snapshot Uploaded!"); fetchData();
-      } catch (err) { showToast("Upload Failed", "error"); }
-      finally { setLoading(false); e.target.value = ''; }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
-
-    if (activeMenu === '1st Count') {
-      const isExist = (data || []).some(d => d.location_id?.toUpperCase() === locU && d.artikel?.toUpperCase() === artU);
-      if (isExist) return showToast("Item Already Scanned!", "error");
-    }
-
-    if (activeMenu === '2nt Count' && selectedLoc2nd) {
-      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return showToast("Validation Failed!", "error");
-      }
-    }
 
     setLoading(true);
     try {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      showToast("Data Saved Successfully!"); 
-      setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
-      fetchData();
+      showToast("Data Saved!"); 
+      setMobLoc(''); setMobArt(''); setMobQty(''); 
+      await fetchData();
       setTimeout(() => inputLocRef.current?.focus(), 200);
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
@@ -157,7 +129,14 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
-  /* ================= UI LOGIC ================= */
+  /* ================= SEARCH LOGIC ================= */
+  const filteredData = data.filter(item => 
+    (item.location_id?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (item.artikel?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (getDesc(item)?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+  );
+
+  /* ================= UI RENDER ================= */
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
@@ -167,8 +146,8 @@ function App() {
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
           <div style={loginHeader}>
-            <h2 style={{fontWeight:900, fontSize:'1.2rem', letterSpacing:'2px'}}>COOL SYSTEM</h2>
-            <p style={{fontSize:'0.6rem', opacity:0.7, marginTop:'5px'}}>LOGISTICS MANAGEMENT</p>
+            <h2 style={{fontWeight:900, fontSize:'1.2rem'}}>COOL SYSTEM</h2>
+            <p style={{fontSize:'0.6rem', opacity:0.7}}>LOGISTICS MANAGEMENT</p>
           </div>
           <div style={{padding:'30px'}}>
             <input placeholder="Username" style={mInput} value={username} onChange={e=>setUsername(e.target.value)} />
@@ -215,9 +194,9 @@ function App() {
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
-            <XCircle size={80} color="#ef4444" strokeWidth={3} />
-            <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI COMPLETE</h2>
-            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Selesai / Sudah dihitung.</p>
+            <CheckCircle2 size={80} color="#16a34a" strokeWidth={3} />
+            <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI SELESAI</h2>
+            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Penghitungan di lokasi ini sudah MATCH.</p>
             <button style={{...btnBlack, marginTop:25, width:'120px'}} onClick={()=>setShowCompletePopup(false)}>OK</button>
           </div>
         </div>
@@ -240,36 +219,34 @@ function App() {
             <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {!isMobile && (
-              <>
-                {activeMenu === 'Snapshoot' && (
-                  <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear all Snapshots?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
-                )}
-                {['1st Count', '2nt Count'].includes(activeMenu) && (
-                  <><button onClick={() => {
-                    const ws = XLSX.utils.json_to_sheet(data.map(r => ({ ...r, created_at: formatWIB(r.created_at || r.timestamp) })));
-                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
-                    XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
-                  }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
-                  <button onClick={() => { if(window.confirm("Clear this data?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
-                )}
-                {activeMenu === 'Reconciliation' && <button onClick={() => {
-                   const ws = XLSX.utils.json_to_sheet(data.map(r => {
-                      const finalVal = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                      const diffV = (r.final_status === 'MATCH') ? 0 : (finalVal - Number(r.qty_snap || 0));
-                      return { ...r, DIFF: diffV };
-                   }));
-                   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
-                   XLSX.writeFile(wb, "COOL_RECON.xlsx");
-                }} style={{...btnWhite, background:'#16a34a', color:'#fff'}}><Download size={12}/> EXPORT RECON</button>}
-              </>
+            {!isMobile && activeMenu === 'Reconciliation' && (
+              <button onClick={() => {
+                const ws = XLSX.utils.json_to_sheet(data.map(r => {
+                   const fv = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+                   return { ...r, DIFF: fv - Number(r.qty_snap || 0) };
+                }));
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
+                XLSX.writeFile(wb, "COOL_RECON.xlsx");
+              }} style={{...btnWhite, background:'#16a34a', color:'#fff'}}><Download size={12}/> EXPORT RECON</button>
             )}
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
         </header>
 
-        {/* ================= DESKTOP VIEW ================= */}
+        {/* SEARCH BAR (Hanya di menu data) */}
+        {['Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].includes(activeMenu) && (
+          <div style={searchContainer}>
+            <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
+            <input 
+              placeholder="Search data..." 
+              style={searchInput} 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+            />
+          </div>
+        )}
+
+        {/* --- DESKTOP GRID MASTER --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {data.map(row => (
@@ -283,27 +260,28 @@ function App() {
           </div>
         )}
 
-        {!isMobile && activeMenu !== 'Master Lokasi' && (
+        {/* --- TABLES (SAMA ANTARA PC & MOBILE KHUSUS RECONCILIATION) --- */}
+        {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
               <thead>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
-                  {activeMenu === 'Snapshoot' ? <><th style={thStyle}>QTY_SNAP</th><th style={thStyle}>DESCRIPTION</th></>
-                  : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
-                  : <><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP</th><th style={thStyle}>OPERATOR</th></>}
+                  {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESCRIPTION</th></>
+                  : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
+                  : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>OPERATOR</th></>}
                 </tr>
               </thead>
               <tbody>
-                {data.map((row, i) => {
-                  const finalVal = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const diff = (row.final_status === 'MATCH') ? 0 : (finalVal - Number(row.qty_snap || 0));
+                {filteredData.map((row, i) => {
+                  const fv = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
+                  const df = fv - Number(row.qty_snap || 0);
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                       <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
                       {activeMenu === 'Snapshoot' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
-                      : activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, fontWeight:800}}>{row.final_status}</td><td style={{ ...tdStyle, color: diff !== 0 ? 'red' : 'green', fontWeight: '900' }}>{diff > 0 ? `+${diff}` : diff}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
-                      : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{formatWIB(row.created_at || row.timestamp)}</td><td style={tdStyle}>{row.operator || '-'}</td></>}
+                      : activeMenu === 'Reconciliation' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st || 0}</td><td style={tdStyle}>{row.qty_2nd || 0}</td><td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                      : <><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_1st || row.qty_2nd}</td><td style={tdStyle}>{row.operator}</td></>}
                     </tr>
                   );
                 })}
@@ -312,19 +290,33 @@ function App() {
           </div>
         )}
 
-        {/* ================= MOBILE VIEW ================= */}
+        {/* --- MOBILE 1ST COUNT --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
-            {locInfo && locInfo.length > 0 && (
+            {locInfo && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REFERENCE ({mobLoc})</div>
-                {locInfo.map((item, idx) => (
-                  <div key={idx} style={infoLine}>
-                    <b>{item.artikel}</b><br/>
-                    <span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>
-                    Snap Qty: <b>{item.qty_snap}</b>
-                  </div>
-                ))}
+                {locInfo.length === 0 ? (
+                  <div style={infoLine}><b>NO SNAPSHOT DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Qty: 0</span></div>
+                ) : (
+                  locInfo.map((item, idx) => {
+                    // Cek jika artikel ini sudah di-scan di lokasi ini pada sesi hitung 1st
+                    const isAlreadyScanned = data.some(d => 
+                      d.location_id?.toUpperCase() === mobLoc.toUpperCase() && 
+                      d.artikel?.toUpperCase() === item.artikel?.toUpperCase()
+                    );
+                    return (
+                      <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                        <div>
+                          <b>{item.artikel}</b><br/>
+                          <span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>
+                          Snap Qty: <b>{item.qty_snap}</b>
+                        </div>
+                        {isAlreadyScanned && <div style={circleCheck}><Check size={12} color="#fff" /></div>}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
             <label style={labelStyle}>SCAN LOKASI</label>
@@ -333,12 +325,15 @@ function App() {
               onChange={e => {
                 const v = e.target.value.toUpperCase(); setMobLoc(v);
                 const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
-                const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && (d.final_status === 'NEED 1ST COUNT' || d.final_status === 'NEED 2ND COUNT'));
-                if (v.length > 0 && needs.length === 0 && (items.length > 0 || (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v))) { 
+                const needs = (window.reconCacheData || []).filter(d => d.location_id?.toUpperCase() === v && d.final_status?.includes('NEED'));
+                
+                if (v.length > 0 && items.length > 0 && needs.length === 0 && (window.reconCacheData || []).some(x => x.location_id?.toUpperCase() === v)) { 
                   setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); 
-                } else if (items.length > 0) { 
-                  setLocInfo(items);
-                  setTimeout(() => inputArtRef.current?.focus(), 100);
+                } else if (v.length > 0) { 
+                  setLocInfo(items.length > 0 ? items : []);
+                  if(items.length > 0) setTimeout(() => inputArtRef.current?.focus(), 100);
+                } else {
+                  setLocInfo(null);
                 }
               }} 
             />
@@ -361,6 +356,7 @@ function App() {
           </div>
         )}
 
+        {/* --- MOBILE 2ND COUNT --- */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
@@ -388,32 +384,12 @@ function App() {
                   <input ref={inputArtRef} placeholder="Validasi Artikel" value={mobArt} style={mInput} onChange={e => {
                     const v = e.target.value.toUpperCase(); setMobArt(v);
                     if(v.length >= 12 || v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
-                  }} onKeyDown={e => { if(e.key === 'Enter') inputQtyRef.current?.focus(); }} />
+                  }} />
                   <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
                   <button onClick={handleSaveInput} style={{...btnBlack, background:'#eab308'}}>SAVE 2ND COUNT</button>
                 </div>
               )}
            </div>
-        )}
-
-        {isMobile && activeMenu === 'Reconciliation' && (
-          <div style={tableWrapper}>
-            <table style={tableStyle}>
-              <thead><tr style={{ background: '#fafafa' }}><th style={thStyle}>LOK</th><th style={thStyle}>ART</th><th style={thStyle}>DIFF</th></tr></thead>
-              <tbody>
-                {data.map((row, i) => {
-                  const fv = (row.qty_2nd !== null && row.qty_2nd !== undefined && row.qty_2nd !== '') ? Number(row.qty_2nd) : Number(row.qty_1st || 0);
-                  const df = fv - Number(row.qty_snap || 0);
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
-                      <td style={{ ...tdStyle, color: df !== 0 ? 'red' : 'green', fontWeight:900 }}>{df > 0 ? `+${df}` : df}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
         )}
       </div>
     </div>
@@ -421,8 +397,9 @@ function App() {
 }
 
 /* ================= STYLES ================= */
-const toastStyle = (type) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
-const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
+const searchContainer = { position: 'relative', marginBottom: '15px' };
+const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
+const circleCheck = { width: 18, height: 18, borderRadius: 9, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
@@ -436,7 +413,7 @@ const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999', textA
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { display:'flex', alignItems:'center', justifyContent:'center', width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer' };
-const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
+const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5 };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
@@ -460,5 +437,6 @@ const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px' };
+const toastStyle = (type) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: type === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
 
 export default App;
