@@ -133,13 +133,36 @@ function App() {
       
       showToast("Data Saved Successfully!"); 
       
-      // OPTIMASI MULTI-SKU: mobLoc TIDAK dihapus agar operator bisa lanjut scan artikel lain di lokasi yang sama
+      // Bersihkan field artikel dan qty
       setMobArt(''); 
       setMobQty(''); 
-      setSelectedLoc2nd(null);
 
-      // Otomatis fokus ke ARTIKEL untuk barang berikutnya
-      setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100);
+      // --- LOGIKA AUTO-RESET LOKASI (MULTI-SKU CHECK) ---
+      if (activeMenu === '1st Count' && locInfo) {
+        // Cek apakah setelah input ini, masih ada artikel yang BELUM di-scan di lokasi tersebut
+        const remainingArticles = locInfo.filter(item => {
+          const isThisArtCurrent = String(item.artikel).toUpperCase() === artU;
+          const isAlreadyInData = data.some(d => 
+            String(d.location_id).toUpperCase() === locU && 
+            String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase()
+          );
+          return !isThisArtCurrent && !isAlreadyInData;
+        });
+
+        if (remainingArticles.length === 0) {
+          // Jika semua artikel sudah dicentang, kosongkan lokasi dan kembali ke SCAN LOKASI
+          setMobLoc('');
+          setLocInfo(null);
+          setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+        } else {
+          // Jika masih ada sisa artikel, pertahankan lokasi dan fokus ke SCAN ARTIKEL
+          setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100);
+        }
+      } else {
+        // Untuk menu selain 1st count, reset normal
+        setMobLoc('');
+        setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+      }
 
       fetchData(); 
     } catch (e) { showToast("Save Failed", "error"); }
