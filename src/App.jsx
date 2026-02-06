@@ -89,12 +89,28 @@ function App() {
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
   /* ================= HANDLERS ================= */
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setLoading(true);
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
+        showToast("Snapshot Uploaded!"); fetchData();
+      } catch (err) { showToast("Upload Failed", "error"); }
+      finally { setLoading(false); e.target.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
 
-    // 1. PROTEKSI 1ST COUNT: Cegah Duplikat Lokasi + Artikel
     if (activeMenu === '1st Count') {
       const isExist = (data || []).some(d => 
         String(d.location_id).toUpperCase() === locU && 
@@ -103,7 +119,6 @@ function App() {
       if (isExist) return showToast("Item Already Scanned!", "error");
     }
 
-    // 2. PROTEKSI 2ND COUNT: Validasi Ketat Lokasi & Artikel Pilihannya
     if (activeMenu === '2nt Count' && selectedLoc2nd) {
       if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
         return showToast("Validation Failed! Must match selection.", "error");
@@ -118,11 +133,15 @@ function App() {
       
       showToast("Data Saved Successfully!"); 
       
-      // OPTIMASI: UX Instan, bersihkan field dan pindah kursor tanpa tunggu fetchData
-      setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
-      setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+      // OPTIMASI MULTI-SKU: mobLoc TIDAK dihapus agar operator bisa lanjut scan artikel lain di lokasi yang sama
+      setMobArt(''); 
+      setMobQty(''); 
+      setSelectedLoc2nd(null);
 
-      fetchData(); // Berjalan di background
+      // Otomatis fokus ke ARTIKEL untuk barang berikutnya
+      setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100);
+
+      fetchData(); 
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
   };
@@ -138,7 +157,7 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
-  /* ================= SEARCH LOGIC ================= */
+  /* ================= SEARCH FILTER LOGIC ================= */
   const filteredData = (data || []).filter(item => {
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
@@ -217,7 +236,7 @@ function App() {
 
       {!isMobile && (
         <nav style={sidebarStyle()}>
-          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL SYSTEM</div>
+          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL<div style={{fontSize:'0.6rem', fontWeight:400, opacity:0.6}}>{user?.full_name}</div></div>
           {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
             <div key={m} onClick={() => { setActiveMenu(m); setSearchTerm(''); }} style={navItem(activeMenu === m)}>{m}</div>
           ))}
@@ -236,7 +255,7 @@ function App() {
               <>
                 {activeMenu === 'Snapshoot' && (
                   <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear All?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
                   <><button onClick={() => {
@@ -263,7 +282,6 @@ function App() {
           </div>
         </header>
 
-        {/* SEARCH BAR (PC Semua & Mobile Recon Only) */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
@@ -271,7 +289,6 @@ function App() {
           </div>
         )}
 
-        {/* --- 1. MASTER LOKASI PC --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {(filteredData || []).map((row, idx) => (
@@ -285,7 +302,6 @@ function App() {
           </div>
         )}
 
-        {/* --- 2. TABLES PC & RECON MOBILE --- */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -321,7 +337,6 @@ function App() {
           </div>
         )}
 
-        {/* --- 3. MOBILE 1ST COUNT (REVISED FINAL) --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
@@ -331,7 +346,7 @@ function App() {
                   <div style={infoLine}><b>NO SNAP DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap: 0</span></div>
                 ) : (
                   locInfo.map((item, idx) => {
-                    const isDone = data.some(d => String(d.location_id) === mobLoc && String(d.artikel) === String(item.artikel));
+                    const isDone = data.some(d => String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
                     return (
                       <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                         <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>Snap: <b>{item.qty_snap}</b></div>
@@ -366,7 +381,6 @@ function App() {
           </div>
         )}
         
-        {/* --- 4. MOBILE 2ND COUNT (STRICT VALIDATION) --- */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
@@ -404,7 +418,7 @@ function App() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLES (Lexend 0.7rem) ================= */
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 const circleCheck = { width: 18, height: 18, borderRadius: 9, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' };
