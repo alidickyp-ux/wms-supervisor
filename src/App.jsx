@@ -23,7 +23,6 @@ function App() {
   const [showMobileHome, setShowMobileHome] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -32,7 +31,6 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* REFS */
   const inputLocRef = useRef(null);
   const inputArtRef = useRef(null);
   const inputQtyRef = useRef(null);
@@ -44,7 +42,6 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* ================= UTILS ================= */
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
@@ -112,10 +109,7 @@ function App() {
     const artU = mobArt.trim().toUpperCase();
 
     if (activeMenu === '1st Count') {
-      const isExist = (data || []).some(d => 
-        String(d.location_id).toUpperCase() === locU && 
-        String(d.artikel).toUpperCase() === artU
-      );
+      const isExist = (data || []).some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU);
       if (isExist) return showToast("Item Already Scanned!", "error");
     }
 
@@ -132,36 +126,36 @@ function App() {
       });
       
       showToast("Data Saved Successfully!"); 
-      
-      // Bersihkan field artikel dan qty
-      setMobArt(''); 
-      setMobQty(''); 
+      setMobArt(''); setMobQty(''); 
 
-      // --- LOGIKA AUTO-RESET LOKASI (MULTI-SKU CHECK) ---
+      // --- LOGIKA AUTO-RESET MULTI-SKU ---
+      let shouldResetLoc = false;
+
       if (activeMenu === '1st Count' && locInfo) {
-        // Cek apakah setelah input ini, masih ada artikel yang BELUM di-scan di lokasi tersebut
-        const remainingArticles = locInfo.filter(item => {
-          const isThisArtCurrent = String(item.artikel).toUpperCase() === artU;
-          const isAlreadyInData = data.some(d => 
-            String(d.location_id).toUpperCase() === locU && 
-            String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase()
-          );
-          return !isThisArtCurrent && !isAlreadyInData;
+        // Cek sisa artikel di snapshot
+        const remain = locInfo.filter(item => {
+          const isCurr = String(item.artikel).toUpperCase() === artU;
+          const isDone = data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
+          return !isCurr && !isDone;
         });
-
-        if (remainingArticles.length === 0) {
-          // Jika semua artikel sudah dicentang, kosongkan lokasi dan kembali ke SCAN LOKASI
-          setMobLoc('');
-          setLocInfo(null);
-          setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
-        } else {
-          // Jika masih ada sisa artikel, pertahankan lokasi dan fokus ke SCAN ARTIKEL
-          setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100);
-        }
+        if (remain.length === 0) shouldResetLoc = true;
+      } else if (activeMenu === '2nt Count') {
+        // Cek sisa artikel yang berstatus 'NEED 2ND COUNT' di lokasi ini
+        const remain2nd = (window.reconCacheData || []).filter(d => 
+          String(d.location_id).toUpperCase() === locU && 
+          d.final_status === 'NEED 2ND COUNT' && 
+          String(d.artikel).toUpperCase() !== artU
+        );
+        if (remain2nd.length === 0) shouldResetLoc = true;
       } else {
-        // Untuk menu selain 1st count, reset normal
-        setMobLoc('');
+        shouldResetLoc = true;
+      }
+
+      if (shouldResetLoc) {
+        setMobLoc(''); setLocInfo(null); setSelectedLoc2nd(null);
         setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+      } else {
+        setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100);
       }
 
       fetchData(); 
@@ -180,7 +174,6 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
-  /* ================= SEARCH FILTER LOGIC ================= */
   const filteredData = (data || []).filter(item => {
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
@@ -191,7 +184,6 @@ function App() {
     );
   });
 
-  /* ================= UI RENDER ================= */
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
   const badge2nd = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
 
@@ -200,16 +192,11 @@ function App() {
       <div style={loginPage}>
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
-          <div style={loginHeader}>
-            <h2 style={{fontWeight:900, fontSize:'1.2rem', letterSpacing:'2px'}}>COOL SYSTEM</h2>
-            <p style={{fontSize:'0.6rem', opacity:0.7}}>LOGISTICS MANAGEMENT</p>
-          </div>
+          <div style={loginHeader}><h2>COOL SYSTEM</h2><p>LOGISTICS MANAGEMENT</p></div>
           <div style={{padding:'30px'}}>
             <input placeholder="Username" style={mInput} value={username} onChange={e=>setUsername(e.target.value)} />
             <input type="password" placeholder="Password" style={mInput} value={password} onChange={e=>setPassword(e.target.value)} />
-            <button onClick={handleLogin} style={btnBlack}>
-              {loginLoading ? <Loader2 className="animate-spin" size={18} /> : "LOGIN"}
-            </button>
+            <button onClick={handleLogin} style={btnBlack}>{loginLoading ? <Loader2 className="animate-spin" size={18}/> : "LOGIN"}</button>
           </div>
         </div>
       </div>
@@ -220,10 +207,7 @@ function App() {
     return (
       <div style={mobileHomeLayout}>
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
-        <div style={mobileHeader}>
-          <h2 style={{fontWeight:900}}>COOL MOBILE</h2>
-          <p style={{fontSize:'0.6rem', opacity:0.5}}>{user?.full_name}</p>
-        </div>
+        <div style={mobileHeader}><h2>COOL MOBILE</h2><p>{user?.full_name}</p></div>
         <div style={mobileMenuGrid}>
           <div style={menuCard} onClick={() => { setActiveMenu('1st Count'); setShowMobileHome(false); setSearchTerm(''); }}>
             <div style={{position:'relative'}}><ClipboardCheck size={28}/>{badge1st > 0 && <div style={badgeStyle}>{badge1st}</div>}</div>
@@ -245,21 +229,15 @@ function App() {
   return (
     <div style={mainLayout}>
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
-      
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
-          <div style={popupContent}>
-            <CheckCircle2 size={80} color="#16a34a" strokeWidth={3} />
-            <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI SELESAI</h2>
-            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Lokasi sudah MATCH atau berhasil di-scan.</p>
-            <button style={{...btnBlack, marginTop:25, width:'120px'}} onClick={()=>setShowCompletePopup(false)}>OK</button>
-          </div>
+          <div style={popupContent}><CheckCircle2 size={80} color="#16a34a" strokeWidth={3} /><h2 style={{fontWeight:900, marginTop:20}}>LOKASI SELESAI</h2><button style={{...btnBlack, marginTop:25, width:120}} onClick={()=>setShowCompletePopup(false)}>OK</button></div>
         </div>
       )}
 
       {!isMobile && (
         <nav style={sidebarStyle()}>
-          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL<div style={{fontSize:'0.6rem', fontWeight:400, opacity:0.6}}>{user?.full_name}</div></div>
+          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL SYSTEM</div>
           {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
             <div key={m} onClick={() => { setActiveMenu(m); setSearchTerm(''); }} style={navItem(activeMenu === m)}>{m}</div>
           ))}
@@ -277,23 +255,21 @@ function App() {
             {!isMobile && (
               <>
                 {activeMenu === 'Snapshoot' && (
-                  <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear All?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
+                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
-                  <><button onClick={() => {
+                  <button onClick={() => {
                     const ws = XLSX.utils.json_to_sheet(data.map(r => ({ ...r, timestamp: formatWIB(r.timestamp) })));
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
                     XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
                   }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
-                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {activeMenu === 'Reconciliation' && (
                   <button onClick={() => {
                     const ws = XLSX.utils.json_to_sheet(data.map(r => {
                        const actual = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                       const dff = (r.final_status === 'MATCH') ? 0 : (actual - Number(r.qty_snap || 0));
-                       return { ...r, DIFF: dff };
+                       return { ...r, DIFF: (r.final_status === 'MATCH') ? 0 : (actual - Number(r.qty_snap || 0)) };
                     }));
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
                     XLSX.writeFile(wb, "COOL_RECON.xlsx");
@@ -308,7 +284,7 @@ function App() {
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
-            <input placeholder="Search data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input placeholder="Search article or location..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         )}
 
@@ -328,7 +304,8 @@ function App() {
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
-              <thead>
+              {/* STICKY HEADER IMPLEMENTED HERE */}
+              <thead style={{ position: 'sticky', top: 0, zIndex: 5, backgroundColor: '#fff' }}>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESC</th></>
@@ -387,8 +364,8 @@ function App() {
                 const needs = (window.reconCacheData || []).filter(d => String(d.location_id).toUpperCase() === v && d.final_status?.includes('NEED'));
                 if (v.length > 0) {
                   setLocInfo(items.length > 0 ? items : []);
-                  const isExisted = (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v);
-                  if (isExisted && needs.length === 0) {
+                  const isExistInRecon = (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v);
+                  if (isExistInRecon && needs.length === 0) {
                     setShowCompletePopup(true); setMobLoc(''); setLocInfo(null);
                   } else if (items.length > 0) { setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100); }
                 } else { setLocInfo(null); }
@@ -409,7 +386,7 @@ function App() {
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
-                setSelectedLoc2nd(f); setMobArt(''); setMobLoc('');
+                setSelectedLoc2nd(f); setMobArt(''); setMobLoc(l); // Set mobLoc untuk validasi
                 setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
@@ -441,7 +418,7 @@ function App() {
   );
 }
 
-/* ================= STYLES (Lexend 0.7rem) ================= */
+/* ================= STYLES ================= */
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 const circleCheck = { width: 18, height: 18, borderRadius: 9, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' };
@@ -450,7 +427,7 @@ const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height:
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const navItem = (active) => ({ padding: '15px 20px', cursor: 'pointer', color: active ? '#000' : '#ccc', fontWeight: active ? '800' : '400' });
-const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowX: 'auto' };
+const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)' }; // Scrollable table
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
 const tdStyle = { padding: '10px' };
