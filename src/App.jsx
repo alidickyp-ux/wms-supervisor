@@ -89,29 +89,12 @@ function App() {
   useEffect(() => { if (isLoggedIn) fetchData(); }, [activeMenu, isLoggedIn]);
 
   /* ================= HANDLERS ================= */
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      setLoading(true);
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        showToast("Snapshot Uploaded!"); fetchData();
-      } catch (err) { showToast("Upload Failed", "error"); }
-      finally { setLoading(false); e.target.value = ''; }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
 
-    // 1. PROTEKSI SCAN GANDA (Hanya untuk 1st Count)
+    // 1. PROTEKSI 1ST COUNT: Cegah Duplikat Lokasi + Artikel
     if (activeMenu === '1st Count') {
       const isExist = (data || []).some(d => 
         String(d.location_id).toUpperCase() === locU && 
@@ -120,25 +103,28 @@ function App() {
       if (isExist) return showToast("Item Already Scanned!", "error");
     }
 
+    // 2. PROTEKSI 2ND COUNT: Validasi Ketat Lokasi & Artikel Pilihannya
+    if (activeMenu === '2nt Count' && selectedLoc2nd) {
+      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
+        return showToast("Validation Failed! Must match selection.", "error");
+      }
+    }
+
     setLoading(true);
     try {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
+      
       showToast("Data Saved Successfully!"); 
-      setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null);
-      await fetchData();
-      setTimeout(() => inputLocRef.current?.focus(), 200);
+      
+      // OPTIMASI: UX Instan, bersihkan field dan pindah kursor tanpa tunggu fetchData
+      setMobLoc(''); setMobArt(''); setMobQty(''); setLocInfo(null); setSelectedLoc2nd(null);
+      setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+
+      fetchData(); // Berjalan di background
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
-  };
-
-  const handleToggle = async (uid, current) => {
-    const nextStatus = current === 'open' ? 'closed' : 'open';
-    try {
-      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
-      fetchData();
-    } catch (e) { showToast("Update Failed", "error"); }
   };
 
   const handleLogin = async () => {
@@ -152,7 +138,7 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
-  /* ================= SEARCH FILTER LOGIC ================= */
+  /* ================= SEARCH LOGIC ================= */
   const filteredData = (data || []).filter(item => {
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
@@ -173,7 +159,7 @@ function App() {
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
           <div style={loginHeader}>
-            <h2 style={{fontWeight:900, fontSize:'1.2rem'}}>COOL SYSTEM</h2>
+            <h2 style={{fontWeight:900, fontSize:'1.2rem', letterSpacing:'2px'}}>COOL SYSTEM</h2>
             <p style={{fontSize:'0.6rem', opacity:0.7}}>LOGISTICS MANAGEMENT</p>
           </div>
           <div style={{padding:'30px'}}>
@@ -223,7 +209,7 @@ function App() {
           <div style={popupContent}>
             <CheckCircle2 size={80} color="#16a34a" strokeWidth={3} />
             <h2 style={{fontWeight:900, marginTop:20, fontSize:'1.2rem'}}>LOKASI SELESAI</h2>
-            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Penghitungan di lokasi ini sudah sinkron / MATCH.</p>
+            <p style={{fontSize:'0.8rem', color:'#666', marginTop:10}}>Lokasi sudah MATCH atau berhasil di-scan.</p>
             <button style={{...btnBlack, marginTop:25, width:'120px'}} onClick={()=>setShowCompletePopup(false)}>OK</button>
           </div>
         </div>
@@ -231,7 +217,7 @@ function App() {
 
       {!isMobile && (
         <nav style={sidebarStyle()}>
-          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL<div style={{fontSize:'0.6rem', fontWeight:400, opacity:0.6}}>{user?.full_name}</div></div>
+          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL SYSTEM</div>
           {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
             <div key={m} onClick={() => { setActiveMenu(m); setSearchTerm(''); }} style={navItem(activeMenu === m)}>{m}</div>
           ))}
@@ -250,7 +236,7 @@ function App() {
               <>
                 {activeMenu === 'Snapshoot' && (
                   <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear all Snapshots?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
                   <><button onClick={() => {
@@ -258,7 +244,7 @@ function App() {
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
                     XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
                   }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
-                  <button onClick={() => { if(window.confirm("Clear this data?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {activeMenu === 'Reconciliation' && (
                   <button onClick={() => {
@@ -277,14 +263,15 @@ function App() {
           </div>
         </header>
 
-        {/* SEARCH BAR (Hanya PC Semua Menu & Mobile Recon Only) */}
+        {/* SEARCH BAR (PC Semua & Mobile Recon Only) */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
-            <input placeholder="Search article or location..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input placeholder="Search data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         )}
 
+        {/* --- 1. MASTER LOKASI PC --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {(filteredData || []).map((row, idx) => (
@@ -298,6 +285,7 @@ function App() {
           </div>
         )}
 
+        {/* --- 2. TABLES PC & RECON MOBILE --- */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -305,7 +293,7 @@ function App() {
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESC</th></>
-                  : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESCRIPTION</th></>
+                  : activeMenu === 'Reconciliation' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>STATUS</th><th style={thStyle}>DIFF</th><th style={thStyle}>DESC</th></>
                   : <><th style={thStyle}>DESC</th><th style={thStyle}>QTY</th><th style={thStyle}>OP</th></>}
                 </tr>
               </thead>
@@ -333,29 +321,21 @@ function App() {
           </div>
         )}
 
-        {/* --- MOBILE 1ST COUNT (FINAL LOGIC) --- */}
+        {/* --- 3. MOBILE 1ST COUNT (REVISED FINAL) --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REFERENCE ({mobLoc})</div>
                 {locInfo.length === 0 ? (
-                  <div style={infoLine}><b>NO SNAPSHOT DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap Qty: 0</span></div>
+                  <div style={infoLine}><b>NO SNAP DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap: 0</span></div>
                 ) : (
                   locInfo.map((item, idx) => {
-                    // LOGIKA CENTANG: Cek kombinasi Lokasi + Artikel
-                    const isAlreadyScanned = data.some(d => 
-                      String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && 
-                      String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase()
-                    );
+                    const isDone = data.some(d => String(d.location_id) === mobLoc && String(d.artikel) === String(item.artikel));
                     return (
                       <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <div>
-                          <b>{item.artikel}</b><br/>
-                          <span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>
-                          Snap Qty: <b>{item.qty_snap}</b>
-                        </div>
-                        {isAlreadyScanned && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
+                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>Snap: <b>{item.qty_snap}</b></div>
+                        {isDone && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
                       </div>
                     );
                   })
@@ -367,38 +347,33 @@ function App() {
                 const v = e.target.value.toUpperCase(); setMobLoc(v);
                 const items = snapData.filter(d => String(d.location_id).toUpperCase() === v);
                 const needs = (window.reconCacheData || []).filter(d => String(d.location_id).toUpperCase() === v && d.final_status?.includes('NEED'));
-                
                 if (v.length > 0) {
-                  // Munculkan info 0 jika lokasi baru
                   setLocInfo(items.length > 0 ? items : []);
-                  
-                  // LOGIKA KUNCI: Kunci jika MATCH atau jika lokasi baru sudah diisi
                   const isExisted = (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v);
                   if (isExisted && needs.length === 0) {
                     setShowCompletePopup(true); setMobLoc(''); setLocInfo(null);
-                  } else if (items.length > 0) {
-                    setTimeout(() => inputArtRef.current?.focus(), 100);
-                  }
+                  } else if (items.length > 0) { setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100); }
                 } else { setLocInfo(null); }
             }} />
             <label style={labelStyle}>SCAN ARTIKEL</label>
             <input ref={inputArtRef} value={mobArt} style={mInput} onChange={e => {
                 const v = e.target.value.toUpperCase(); setMobArt(v);
-                if(v.length >= 12) setTimeout(() => inputQtyRef.current?.focus(), 100);
-            }} onKeyDown={e => { if(e.key === 'Enter') inputQtyRef.current?.focus(); }} />
+                if(v.length >= 12) setTimeout(() => { if(inputQtyRef.current) inputQtyRef.current.focus(); }, 100);
+            }} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); if(inputQtyRef.current) inputQtyRef.current.focus(); } }} />
             <label style={labelStyle}>QTY</label>
             <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
         
+        {/* --- 4. MOBILE 2ND COUNT (STRICT VALIDATION) --- */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
                 setSelectedLoc2nd(f); setMobArt(''); setMobLoc('');
-                setTimeout(() => inputLocRef.current?.focus(), 100);
+                setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
                 {(window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').map((t, i) => (
@@ -412,11 +387,11 @@ function App() {
                   </div>
                   <input ref={inputLocRef} placeholder="Validasi Lokasi" value={mobLoc} style={mInput} onChange={e => {
                     const v = e.target.value.toUpperCase(); setMobLoc(v);
-                    if(v === selectedLoc2nd.location_id.toUpperCase()) inputArtRef.current?.focus();
+                    if(v === selectedLoc2nd.location_id.toUpperCase()) { if(inputArtRef.current) inputArtRef.current.focus(); }
                   }} />
                   <input ref={inputArtRef} placeholder="Validasi Artikel" value={mobArt} style={mInput} onChange={e => {
                     const v = e.target.value.toUpperCase(); setMobArt(v);
-                    if(v.length >= 12 || v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
+                    if(v === selectedLoc2nd.artikel.toUpperCase()) { if(inputQtyRef.current) inputQtyRef.current.focus(); }
                   }} />
                   <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
                   <button onClick={handleSaveInput} style={{...btnBlack, background:'#eab308'}}>SAVE 2ND COUNT</button>
