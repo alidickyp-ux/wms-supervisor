@@ -23,6 +23,7 @@ function App() {
   const [showMobileHome, setShowMobileHome] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
+  /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -31,6 +32,7 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
+  /* REFS */
   const inputLocRef = useRef(null);
   const inputArtRef = useRef(null);
   const inputQtyRef = useRef(null);
@@ -42,6 +44,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  /* ================= UTILS ================= */
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
@@ -62,7 +65,7 @@ function App() {
     return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
   };
 
-  /* ================= FETCH ================= */
+  /* ================= FETCH (OPTIMIZED FOR FAST LOGIN) ================= */
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -70,15 +73,20 @@ function App() {
         'Master Lokasi': 'master', 'Snapshoot': 'snapshot_list',
         '1st Count': 'first', '2nt Count': isMobile ? 'recon' : 'second', 'Reconciliation': 'recon'
       };
+
+      // 1. Tarik data menu aktif dulu agar dashboard muncul instan
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
-      const rawData = Array.isArray(res.data.data) ? res.data.data : [];
-      setData(rawData);
+      setData(Array.isArray(res.data.data) ? res.data.data : []);
       
-      const resSnap = await axios.get(`${API_BASE}?action=get_data&target=snapshot_list`);
-      setSnapData(Array.isArray(resSnap.data.data) ? resSnap.data.data : []);
+      // 2. Data pendukung ditarik di background tanpa 'await'
+      axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => {
+        setSnapData(Array.isArray(rs.data.data) ? rs.data.data : []);
+      });
       
-      const resRecon = await axios.get(`${API_BASE}?action=get_data&target=recon`);
-      window.reconCacheData = Array.isArray(resRecon.data.data) ? resRecon.data.data : [];
+      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => {
+        window.reconCacheData = Array.isArray(rr.data.data) ? rr.data.data : [];
+      });
+
     } catch (e) { setData([]); }
     finally { setLoading(false); }
   };
@@ -121,44 +129,38 @@ function App() {
 
     setLoading(true);
     try {
+      // KIRIM DATA (Wait but fast)
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
       
       showToast("Data Saved Successfully!"); 
+      
+      // LOGIKA INSTAN & STICKY MULTI-SKU
+      const currentLoc = locU;
+      const currentArt = artU;
       setMobArt(''); setMobQty(''); 
 
-      // --- LOGIKA AUTO-RESET MULTI-SKU ---
-      let shouldResetLoc = false;
-
+      let isFinished = false;
       if (activeMenu === '1st Count' && locInfo) {
-        // Cek sisa artikel di snapshot
         const remain = locInfo.filter(item => {
-          const isCurr = String(item.artikel).toUpperCase() === artU;
-          const isDone = data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
-          return !isCurr && !isDone;
+          const isDone = data.some(d => String(d.location_id).toUpperCase() === currentLoc && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
+          return String(item.artikel).toUpperCase() !== currentArt && !isDone;
         });
-        if (remain.length === 0) shouldResetLoc = true;
+        if (remain.length === 0) isFinished = true;
       } else if (activeMenu === '2nt Count') {
-        // Cek sisa artikel yang berstatus 'NEED 2ND COUNT' di lokasi ini
-        const remain2nd = (window.reconCacheData || []).filter(d => 
-          String(d.location_id).toUpperCase() === locU && 
-          d.final_status === 'NEED 2ND COUNT' && 
-          String(d.artikel).toUpperCase() !== artU
-        );
-        if (remain2nd.length === 0) shouldResetLoc = true;
-      } else {
-        shouldResetLoc = true;
-      }
+        const remain2nd = (window.reconCacheData || []).filter(d => String(d.location_id).toUpperCase() === currentLoc && d.final_status === 'NEED 2ND COUNT' && String(d.artikel).toUpperCase() !== currentArt);
+        if (remain2nd.length === 0) isFinished = true;
+      } else { isFinished = true; }
 
-      if (shouldResetLoc) {
+      if (isFinished) {
         setMobLoc(''); setLocInfo(null); setSelectedLoc2nd(null);
-        setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+        setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 50);
       } else {
-        setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100);
+        setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 50);
       }
 
-      fetchData(); 
+      fetchData(); // Update list di background
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
   };
@@ -256,7 +258,7 @@ function App() {
               <>
                 {activeMenu === 'Snapshoot' && (
                   <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <button onClick={() => { if(window.confirm("Clear All?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
                   <button onClick={() => {
@@ -284,10 +286,11 @@ function App() {
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
-            <input placeholder="Search article or location..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input placeholder="Search..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         )}
 
+        {/* --- MASTER PC --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {(filteredData || []).map((row, idx) => (
@@ -301,11 +304,12 @@ function App() {
           </div>
         )}
 
+        {/* --- TABLES PC & RECON MOBILE --- */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
-              {/* STICKY HEADER IMPLEMENTED HERE */}
-              <thead style={{ position: 'sticky', top: 0, zIndex: 5, backgroundColor: '#fff' }}>
+              {/* STICKY HEADER */}
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff' }}>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
                   {activeMenu === 'Snapshoot' ? <><th style={thStyle}>SNAP</th><th style={thStyle}>DESC</th></>
@@ -337,19 +341,20 @@ function App() {
           </div>
         )}
 
+        {/* --- MOBILE 1ST COUNT --- */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REFERENCE ({mobLoc})</div>
                 {locInfo.length === 0 ? (
-                  <div style={infoLine}><b>NO SNAP DATA</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>Art: 0 | Desc: 0 | Snap: 0</span></div>
+                  <div style={infoLine}><b>NO SNAP DATA</b><br/><span style={{fontSize:'0.6rem'}}>Art: 0 | Desc: 0 | Snap: 0</span></div>
                 ) : (
                   locInfo.map((item, idx) => {
                     const isDone = data.some(d => String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
                     return (
                       <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem', color:'#666'}}>{getDesc(item)}</span><br/>Snap: <b>{item.qty_snap}</b></div>
+                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(item)}</span><br/>Snap: <b>{item.qty_snap}</b></div>
                         {isDone && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
                       </div>
                     );
@@ -364,8 +369,8 @@ function App() {
                 const needs = (window.reconCacheData || []).filter(d => String(d.location_id).toUpperCase() === v && d.final_status?.includes('NEED'));
                 if (v.length > 0) {
                   setLocInfo(items.length > 0 ? items : []);
-                  const isExistInRecon = (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v);
-                  if (isExistInRecon && needs.length === 0) {
+                  const isExist = (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v);
+                  if (isExist && needs.length === 0) {
                     setShowCompletePopup(true); setMobLoc(''); setLocInfo(null);
                   } else if (items.length > 0) { setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100); }
                 } else { setLocInfo(null); }
@@ -381,12 +386,13 @@ function App() {
           </div>
         )}
         
+        {/* --- MOBILE 2ND COUNT --- */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
-                setSelectedLoc2nd(f); setMobArt(''); setMobLoc(l); // Set mobLoc untuk validasi
+                setSelectedLoc2nd(f); setMobArt(''); setMobLoc(l);
                 setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
@@ -427,7 +433,7 @@ const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height:
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const navItem = (active) => ({ padding: '15px 20px', cursor: 'pointer', color: active ? '#000' : '#ccc', fontWeight: active ? '800' : '400' });
-const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)' }; // Scrollable table
+const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
 const tdStyle = { padding: '10px' };
