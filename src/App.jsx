@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import {
-  RefreshCw, FileSpreadsheet, Trash2, Database, LogOut, Upload, Search,
-  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download, XCircle, 
-  CheckCircle2, AlertCircle, Loader2, Check
+  RefreshCw, FileSpreadsheet, Trash2, LogOut, Upload, Search,
+  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download,
+  CheckCircle2, Loader2, Check
 } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
@@ -32,7 +32,6 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* REFS */
   const inputLocRef = useRef(null);
   const inputArtRef = useRef(null);
   const inputQtyRef = useRef(null);
@@ -44,7 +43,6 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* ================= UTILS ================= */
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
@@ -65,7 +63,7 @@ function App() {
     return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
   };
 
-  /* ================= FETCH (OPTIMIZED FOR FAST LOGIN) ================= */
+  /* ================= FETCH (FAST LOGIN) ================= */
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -74,11 +72,9 @@ function App() {
         '1st Count': 'first', '2nt Count': isMobile ? 'recon' : 'second', 'Reconciliation': 'recon'
       };
 
-      // 1. Tarik data menu aktif dulu agar dashboard muncul instan
       const res = await axios.get(`${API_BASE}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(Array.isArray(res.data.data) ? res.data.data : []);
       
-      // 2. Data pendukung ditarik di background tanpa 'await'
       axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => {
         setSnapData(Array.isArray(rs.data.data) ? rs.data.data : []);
       });
@@ -111,6 +107,15 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
+  const handleToggle = async (uid, currentStatus) => {
+    const nextStatus = currentStatus === 'open' ? 'closed' : 'open';
+    try {
+      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
+      // Update local state untuk respon cepat visual
+      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
+    } catch (e) { showToast("Toggle Failed", "error"); }
+  };
+
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Incomplete", "error");
     const locU = mobLoc.trim().toUpperCase();
@@ -123,20 +128,18 @@ function App() {
 
     if (activeMenu === '2nt Count' && selectedLoc2nd) {
       if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return showToast("Validation Failed! Must match selection.", "error");
+        return showToast("Validation Failed!", "error");
       }
     }
 
     setLoading(true);
     try {
-      // KIRIM DATA (Wait but fast)
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
       
       showToast("Data Saved Successfully!"); 
       
-      // LOGIKA INSTAN & STICKY MULTI-SKU
       const currentLoc = locU;
       const currentArt = artU;
       setMobArt(''); setMobQty(''); 
@@ -144,8 +147,9 @@ function App() {
       let isFinished = false;
       if (activeMenu === '1st Count' && locInfo) {
         const remain = locInfo.filter(item => {
+          const isCurr = String(item.artikel).toUpperCase() === currentArt;
           const isDone = data.some(d => String(d.location_id).toUpperCase() === currentLoc && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
-          return String(item.artikel).toUpperCase() !== currentArt && !isDone;
+          return !isCurr && !isDone;
         });
         if (remain.length === 0) isFinished = true;
       } else if (activeMenu === '2nt Count') {
@@ -155,12 +159,12 @@ function App() {
 
       if (isFinished) {
         setMobLoc(''); setLocInfo(null); setSelectedLoc2nd(null);
-        setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 50);
+        setTimeout(() => inputLocRef.current?.focus(), 50);
       } else {
-        setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 50);
+        setTimeout(() => inputArtRef.current?.focus(), 50);
       }
 
-      fetchData(); // Update list di background
+      fetchData(); 
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
   };
@@ -179,11 +183,8 @@ function App() {
   const filteredData = (data || []).filter(item => {
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
-    return (
-      String(item.location_id || '').toLowerCase().includes(s) ||
-      String(item.artikel || '').toLowerCase().includes(s) ||
-      getDesc(item).toLowerCase().includes(s)
-    );
+    const loc = String(item.location_id || item.unique_id || '').toLowerCase();
+    return loc.includes(s) || String(item.artikel || '').toLowerCase().includes(s) || getDesc(item).toLowerCase().includes(s);
   });
 
   const badge1st = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
@@ -223,7 +224,7 @@ function App() {
             <BarChart3 size={28} /> <span style={menuText}>Reconcile</span>
           </div>
         </div>
-        <button onClick={()=>setIsLoggedIn(false)} style={btnLogoutMobile}><LogOut size={16} /> Logout System</button>
+        <button onClick={()=>setIsLoggedIn(false)} style={btnLogoutMobile}><LogOut size={16} /> Logout</button>
       </div>
     );
   }
@@ -239,7 +240,7 @@ function App() {
 
       {!isMobile && (
         <nav style={sidebarStyle()}>
-          <div style={{ padding: '20px', fontWeight: '900', fontSize: '0.8rem' }}>COOL SYSTEM</div>
+          <div style={{ padding: 20, fontWeight: 900 }}>COOL SYSTEM</div>
           {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
             <div key={m} onClick={() => { setActiveMenu(m); setSearchTerm(''); }} style={navItem(activeMenu === m)}>{m}</div>
           ))}
@@ -253,19 +254,26 @@ function App() {
             {isMobile && <button onClick={() => setShowMobileHome(true)} style={btnIcon}><ChevronLeft size={18}/></button>}
             <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           </div>
+          
+          {/* TOMBOL SAKTI HEADER (Hanya PC) */}
           <div style={{ display: 'flex', gap: '8px' }}>
             {!isMobile && (
               <>
                 {activeMenu === 'Snapshoot' && (
-                  <><label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
-                  <button onClick={() => { if(window.confirm("Clear All?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button></>
+                  <>
+                    <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden accept=".xlsx" onChange={handleFileUpload}/></label>
+                    <button onClick={() => { if(window.confirm("Clear all Snapshots?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                  </>
                 )}
                 {['1st Count', '2nt Count'].includes(activeMenu) && (
-                  <button onClick={() => {
-                    const ws = XLSX.utils.json_to_sheet(data.map(r => ({ ...r, timestamp: formatWIB(r.timestamp) })));
-                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
-                    XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
-                  }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
+                  <>
+                    <button onClick={() => {
+                      const ws = XLSX.utils.json_to_sheet(data.map(r => ({ ...r, timestamp: formatWIB(r.timestamp) })));
+                      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
+                      XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
+                    }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
+                    <button onClick={() => { if(window.confirm("Clear this data?")) axios.post(`${API_BASE}?action=clear_${activeMenu === '1st Count' ? 'first' : 'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                  </>
                 )}
                 {activeMenu === 'Reconciliation' && (
                   <button onClick={() => {
@@ -286,11 +294,11 @@ function App() {
         {((!isMobile && activeMenu !== 'Master Lokasi') || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={searchContainer}>
             <Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} />
-            <input placeholder="Search..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input placeholder="Search article or location..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         )}
 
-        {/* --- MASTER PC --- */}
+        {/* MASTER PC */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={gridContainer()}>
             {(filteredData || []).map((row, idx) => (
@@ -304,11 +312,10 @@ function App() {
           </div>
         )}
 
-        {/* --- TABLES PC & RECON MOBILE --- */}
+        {/* TABLES PC & RECON MOBILE */}
         {((!isMobile && activeMenu !== 'Master Lokasi') || (activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
-              {/* STICKY HEADER */}
               <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff' }}>
                 <tr style={{ background: '#fafafa' }}>
                   <th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th>
@@ -323,7 +330,7 @@ function App() {
                   const diff = (row.final_status === 'MATCH') ? 0 : (actual - Number(row.qty_snap || 0));
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td>
+                      <td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel || '-'}</td>
                       {activeMenu === 'Snapshoot' ? <><td style={tdStyle}>{row.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                       : activeMenu === 'Reconciliation' ? (
                         <>
@@ -341,25 +348,23 @@ function App() {
           </div>
         )}
 
-        {/* --- MOBILE 1ST COUNT --- */}
+        {/* MOBILE 1ST COUNT */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxInfo}>
-                <div style={boxTitle}>REFERENCE ({mobLoc})</div>
-                {locInfo.length === 0 ? (
-                  <div style={infoLine}><b>NO SNAP DATA</b><br/><span style={{fontSize:'0.6rem'}}>Art: 0 | Desc: 0 | Snap: 0</span></div>
-                ) : (
+                <div style={boxTitle}>REF ({mobLoc})</div>
+                {locInfo.length === 0 ? <div style={infoLine}><span>Art: 0 | Snap: 0</span></div> :
                   locInfo.map((item, idx) => {
                     const isDone = data.some(d => String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
                     return (
                       <div key={idx} style={{...infoLine, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(item)}</span><br/>Snap: <b>{item.qty_snap}</b></div>
+                        <div><b>{item.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(item)}</span><br/>Snap: {item.qty_snap}</div>
                         {isDone && <div style={circleCheck}><Check size={12} color="#fff" strokeWidth={4} /></div>}
                       </div>
                     );
                   })
-                )}
+                }
               </div>
             )}
             <label style={labelStyle}>SCAN LOKASI</label>
@@ -369,31 +374,30 @@ function App() {
                 const needs = (window.reconCacheData || []).filter(d => String(d.location_id).toUpperCase() === v && d.final_status?.includes('NEED'));
                 if (v.length > 0) {
                   setLocInfo(items.length > 0 ? items : []);
-                  const isExist = (window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v);
-                  if (isExist && needs.length === 0) {
+                  if ((window.reconCacheData || []).some(x => String(x.location_id).toUpperCase() === v) && needs.length === 0) {
                     setShowCompletePopup(true); setMobLoc(''); setLocInfo(null);
-                  } else if (items.length > 0) { setTimeout(() => { if(inputArtRef.current) inputArtRef.current.focus(); }, 100); }
+                  } else if (items.length > 0) { setTimeout(() => inputArtRef.current?.focus(), 50); }
                 } else { setLocInfo(null); }
             }} />
             <label style={labelStyle}>SCAN ARTIKEL</label>
             <input ref={inputArtRef} value={mobArt} style={mInput} onChange={e => {
                 const v = e.target.value.toUpperCase(); setMobArt(v);
-                if(v.length >= 12) setTimeout(() => { if(inputQtyRef.current) inputQtyRef.current.focus(); }, 100);
-            }} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); if(inputQtyRef.current) inputQtyRef.current.focus(); } }} />
+                if(v.length >= 12) setTimeout(() => inputQtyRef.current?.focus(), 50);
+            }} onKeyDown={e => { if(e.key === 'Enter') inputQtyRef.current?.focus(); }} />
             <label style={labelStyle}>QTY</label>
             <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
         )}
         
-        {/* --- MOBILE 2ND COUNT --- */}
+        {/* MOBILE 2ND COUNT */}
         {activeMenu === '2nt Count' && isMobile && (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
               <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
                 setSelectedLoc2nd(f); setMobArt(''); setMobLoc(l);
-                setTimeout(() => { if(inputLocRef.current) inputLocRef.current.focus(); }, 100);
+                setTimeout(() => inputLocRef.current?.focus(), 50);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
                 {(window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').map((t, i) => (
@@ -402,16 +406,14 @@ function App() {
               </select>
               {selectedLoc2nd && (
                 <div style={formWrapper}>
-                  <div style={boxInfoYellow}>
-                    <b>{selectedLoc2nd.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(selectedLoc2nd)}</span><br/>Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}
-                  </div>
+                  <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}</div>
                   <input ref={inputLocRef} placeholder="Validasi Lokasi" value={mobLoc} style={mInput} onChange={e => {
                     const v = e.target.value.toUpperCase(); setMobLoc(v);
-                    if(v === selectedLoc2nd.location_id.toUpperCase()) { if(inputArtRef.current) inputArtRef.current.focus(); }
+                    if(v === selectedLoc2nd.location_id.toUpperCase()) inputArtRef.current?.focus();
                   }} />
                   <input ref={inputArtRef} placeholder="Validasi Artikel" value={mobArt} style={mInput} onChange={e => {
                     const v = e.target.value.toUpperCase(); setMobArt(v);
-                    if(v === selectedLoc2nd.artikel.toUpperCase()) { if(inputQtyRef.current) inputQtyRef.current.focus(); }
+                    if(v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
                   }} />
                   <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
                   <button onClick={handleSaveInput} style={{...btnBlack, background:'#eab308'}}>SAVE 2ND COUNT</button>
