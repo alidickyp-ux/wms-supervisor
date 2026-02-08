@@ -65,7 +65,7 @@ function App() {
     return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
   };
 
-  /* ================= FETCH (FAST LOGIN OPTIMIZED) ================= */
+  /* ================= FETCH (FAST LOGIN) ================= */
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -145,7 +145,7 @@ function App() {
 
     if (activeMenu === '2nt Count' && selectedLoc2nd) {
       if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return showToast("Validation Failed! Harus sesuai pilihan.", "error");
+        return showToast("Validation Failed!", "error");
       }
     }
 
@@ -154,9 +154,8 @@ function App() {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      
       showToast("Data Saved Successfully!"); 
-
+      
       const currentLoc = locU;
       const currentArt = artU;
       setMobArt(''); setMobQty(''); 
@@ -184,7 +183,6 @@ function App() {
       } else {
         setTimeout(() => { if (inputArtRef.current) inputArtRef.current.focus(); }, 50);
       }
-
       fetchData(); 
     } catch (e) { showToast("Save Failed", "error"); }
     finally { setLoading(false); }
@@ -275,6 +273,7 @@ function App() {
             {isMobile && <button onClick={() => setShowMobileHome(true)} style={btnIcon}><ChevronLeft size={18}/></button>}
             <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           </div>
+          
           <div style={{ display: 'flex', gap: '8px' }}>
             {!isMobile && (
               <>
@@ -300,8 +299,7 @@ function App() {
                   <button onClick={() => {
                     const ws = XLSX.utils.json_to_sheet(data.map(r => {
                        const actual = (r.qty_2nd !== null && r.qty_2nd !== undefined && r.qty_2nd !== '') ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-                       const dff = (r.final_status === 'MATCH') ? 0 : (actual - Number(r.qty_snap || 0));
-                       return { ...r, DIFF: dff };
+                       return { ...r, DIFF: (r.final_status === 'MATCH') ? 0 : (actual - Number(r.qty_snap || 0)) };
                     }));
                     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Recon");
                     XLSX.writeFile(wb, "COOL_RECON.xlsx");
@@ -439,7 +437,7 @@ function App() {
                 const [l, a] = e.target.value.split('|');
                 const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
                 setSelectedLoc2nd(f); setMobArt(''); setMobLoc(l);
-                setTimeout(() => { if (inputLocRef.current) inputLocRef.current.focus(); }, 50);
+                setTimeout(() => { if (inputLocRef.current) inputLocRef.current.focus(); }, 100);
               }}>
                 <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
                 {(window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').map((t, i) => (
