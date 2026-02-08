@@ -26,6 +26,7 @@ function App() {
   const [showMobileHome, setShowMobileHome] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
+  /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -65,7 +66,7 @@ function App() {
     return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
   };
 
-  /* ================= FETCH (OPTIMIZED) ================= */
+  /* ================= FETCH (FAST LOGIN) ================= */
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -154,8 +155,8 @@ function App() {
       await axios.post(`${API_BASE}?action=save_input`, {
         location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu
       });
-      showToast("Data Saved Successfully!"); 
       
+      showToast("Data Saved Successfully!"); 
       const currentLoc = locU;
       const currentArt = artU;
       setMobArt(''); setMobQty(''); 
@@ -208,6 +209,7 @@ function App() {
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
+        {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
           <div style={loginHeader}><h2>COOL SYSTEM</h2><p>LOGISTICS MANAGEMENT</p></div>
           <div style={{padding:'30px'}}>
@@ -223,6 +225,7 @@ function App() {
   if (isMobile && showMobileHome) {
     return (
       <div style={mobileHomeLayout}>
+        {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={mobileHeader}><h2>COOL MOBILE</h2><p>{user?.full_name}</p></div>
         <div style={mobileMenuGrid}>
           <div style={menuCard} onClick={() => { setActiveMenu('1st Count'); setShowMobileHome(false); setSearchTerm(''); }}>
@@ -245,7 +248,12 @@ function App() {
   return (
     <div style={mainLayout}>
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
-      
+      {showCompletePopup && (
+        <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
+          <div style={popupContent}><CheckCircle2 size={80} color="#16a34a" strokeWidth={3} /><h2 style={{fontWeight:900, marginTop:20}}>LOKASI SELESAI</h2><button style={{...btnBlack, marginTop:25, width:120}} onClick={()=>setShowCompletePopup(false)}>OK</button></div>
+        </div>
+      )}
+
       {!isMobile && (
         <nav style={sidebarStyle()}>
           <div style={{ padding: 20, fontWeight: 900 }}>COOL SYSTEM</div>
@@ -314,7 +322,6 @@ function App() {
           </div>
         )}
 
-        {/* 1. GRID VIEW PC */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' && (
           <div style={gridContainer()}>
             {(filteredData || []).map((row, idx) => (
@@ -328,7 +335,6 @@ function App() {
           </div>
         )}
 
-        {/* 2. TABLES PC & RECON MOBILE */}
         {((!isMobile && (activeMenu !== 'Master Lokasi' || masterTab === 'database')) || (isMobile && activeMenu === 'Reconciliation')) && (
           <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -368,13 +374,13 @@ function App() {
           </div>
         )}
 
-        {/* MOBILE 1ST COUNT */}
+        {/* MOBILE UI - TANPA PERUBAHAN LOGIKA */}
         {activeMenu === '1st Count' && isMobile && (
           <div style={formWrapper}>
             {locInfo && (
               <div style={boxInfo}>
                 <div style={boxTitle}>REF ({mobLoc})</div>
-                {locInfo.length === 0 ? <div style={infoLine}><span style={{fontSize:'0.6rem'}}>Art: 0 | Snap: 0</span></div> :
+                {locInfo.length === 0 ? <div style={infoLine}><span>Art: 0 | Snap: 0</span></div> :
                   locInfo.map((item, idx) => {
                     const isDone = data.some(d => String(d.location_id).toUpperCase() === mobLoc.toUpperCase() && String(d.artikel).toUpperCase() === String(item.artikel).toUpperCase());
                     return (
@@ -408,37 +414,6 @@ function App() {
             <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
             <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
           </div>
-        )}
-        
-        {activeMenu === '2nt Count' && isMobile && (
-           <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
-              <select style={mInput} value={selectedLoc2nd ? `${selectedLoc2nd.location_id}|${selectedLoc2nd.artikel}` : ""} onChange={e => {
-                const [l, a] = e.target.value.split('|');
-                const f = (window.reconCacheData || []).find(d => d.location_id === l && d.artikel === a);
-                setSelectedLoc2nd(f); setMobArt(''); setMobLoc(l);
-                setTimeout(() => if(inputLocRef.current) inputLocRef.current.focus(), 50);
-              }}>
-                <option value="">-- CHOOSE NEED 2ND ({badge2nd}) --</option>
-                {(window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').map((t, i) => (
-                  <option key={i} value={`${t.location_id}|${t.artikel}`}>{t.location_id} | {t.artikel}</option>
-                ))}
-              </select>
-              {selectedLoc2nd && (
-                <div style={formWrapper}>
-                  <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}</div>
-                  <input ref={inputLocRef} placeholder="Validasi Lokasi" value={mobLoc} style={mInput} onChange={e => {
-                    const v = e.target.value.toUpperCase(); setMobLoc(v);
-                    if(v === selectedLoc2nd.location_id.toUpperCase()) inputArtRef.current?.focus();
-                  }} />
-                  <input ref={inputArtRef} placeholder="Validasi Artikel" value={mobArt} style={mInput} onChange={e => {
-                    const v = e.target.value.toUpperCase(); setMobArt(v);
-                    if(v === selectedLoc2nd.artikel.toUpperCase()) inputQtyRef.current?.focus();
-                  }} />
-                  <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e => setMobQty(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSaveInput(); }} />
-                  <button onClick={handleSaveInput} style={{...btnBlack, background:'#eab308'}}>SAVE 2ND COUNT</button>
-                </div>
-              )}
-           </div>
         )}
       </div>
     </div>
