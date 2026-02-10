@@ -424,12 +424,12 @@ function App() {
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
             <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
-            <label style={labelStyle}>BARCODE ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
+            <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
             <div style={{display:'flex', gap:10}}>
               <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
               <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
             </div>
-            <label style={labelStyle}>UNIQUE ID (OTOMATIS)</label><input style={{...mInput, background:'#f5f5f5'}} value={newLoc.unique} readOnly />
+            <label style={labelStyle}>UNIQUE ID</label><input style={{...mInput, background:'#f5f5f5'}} value={newLoc.unique} readOnly />
             <label style={labelStyle}>ASSIGN STATUS</label>
             <select style={mInput} value={newLoc.assign} onChange={e=>setNewLoc({...newLoc, assign: e.target.value})}>
               <option value="closed">CLOSED</option>
