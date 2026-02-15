@@ -9,10 +9,10 @@ import {
 } from 'lucide-react';
 
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
-const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; // Backend baru
+const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; // Backend Outbound
 
 function App() {
-  /* ================= 1. STATE (V6 STANDARDIZED) ================= */
+  /* ================= 1. STATE (V5 STANDARDIZED - UTUH) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -38,6 +38,7 @@ function App() {
   const [mobQty, setMobQty] = useState('');
   const [locInfo, setLocInfo] = useState(null);
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
+  const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
   const inputLocRef = useRef(null);
@@ -51,7 +52,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Otomatis --- */
+  /* --- Logika Unique ID Otomatis (V5) --- */
   useEffect(() => {
     if (newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
@@ -69,11 +70,16 @@ function App() {
     return item.description || item.DESCRIPTION || item.desc || item.nama_barang || '-';
   };
 
-  /* ================= 3. FETCHING (V6 DYNAMIC) ================= */
+  // Utility WIB untuk Outbound
+  const formatWIB = (dateStr) => {
+    if (!dateStr) return '-';
+    return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+  };
+
+  /* ================= 3. FETCHING (INTEGRATED) ================= */
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Tentukan API mana yang dipakai
       const outboundMenus = ['Picking', 'Packing', 'Explorer'];
       const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
 
@@ -91,11 +97,9 @@ function App() {
       const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
       setData(Array.isArray(res.data.data) ? res.data.data : []);
       
-      // Load cache inventory hanya jika diperlukan
-      if (!outboundMenus.includes(activeMenu)) {
-        axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(Array.isArray(rs.data.data) ? rs.data.data : []));
-        axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => window.reconCacheData = Array.isArray(rr.data.data) ? rr.data.data : []);
-      }
+      // Load cache inventory data
+      axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(Array.isArray(rs.data.data) ? rs.data.data : []));
+      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => window.reconCacheData = Array.isArray(rr.data.data) ? rr.data.data : []);
     } catch (e) { setData([]); }
     finally { setLoading(false); setSelectedRows([]); }
   };
@@ -189,8 +193,9 @@ function App() {
   const filteredData = (data || []).filter(item => {
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
-    const loc = String(item.location_id || item.unique_id || item.picklist_number || '').toLowerCase();
-    return loc.includes(s) || String(item.artikel || item.sku || '').toLowerCase().includes(s) || getDesc(item).toLowerCase().includes(s);
+    const loc = String(item.id || item.location_id || item.unique_id || item.picklist_number || '').toLowerCase();
+    const art = String(item.artikel || item.product_id || '').toLowerCase();
+    return loc.includes(s) || art.includes(s) || getDesc(item).toLowerCase().includes(s);
   });
 
   /* ================= 5. RENDER UI ================= */
@@ -242,17 +247,14 @@ function App() {
       {!isMobile && (
         <nav style={sidebarStyle()}>
           <div style={{ padding: 20, fontWeight: 900 }}>COOL SYSTEM</div>
-          
           <div style={menuSectionLabel}>INVENTORY</div>
           {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
             <div key={m} onClick={() => { setActiveMenu(m); setSearchTerm(''); setMasterTab('grid'); }} style={navItem(activeMenu === m)}>{m}</div>
           ))}
-
           <div style={menuSectionLabel}>OUTBOUND</div>
           <div onClick={() => setActiveMenu('Picking')} style={navItem(activeMenu === 'Picking')}><Truck size={14} style={{marginRight:8}}/> Picking</div>
           <div onClick={() => setActiveMenu('Packing')} style={navItem(activeMenu === 'Packing')}><Package size={14} style={{marginRight:8}}/> Packing</div>
           <div onClick={() => setActiveMenu('Explorer')} style={navItem(activeMenu === 'Explorer')}><Globe size={14} style={{marginRight:8}}/> Explorer</div>
-
           <button onClick={() => setIsLoggedIn(false)} style={btnLogout}><LogOut size={14} /></button>
         </nav>
       )}
@@ -272,14 +274,20 @@ function App() {
                     <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
                   </>
                 )}
-                {/* Export Button for relevant menus */}
-                {['1st Count', '2nt Count', 'Reconciliation', 'Picking', 'Packing', 'Explorer'].includes(activeMenu) && (
-                   <button onClick={() => {
-                    const ws = XLSX.utils.json_to_sheet(data);
-                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
-                    XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
-                  }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
+                {activeMenu === 'Snapshoot' && (
+                  <>
+                    <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
+                    <button onClick={() => { if(window.confirm("Hapus semua Snap?")) axios.post(`${API_BASE}?action=clear_snap`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                  </>
                 )}
+                {['1st Count', '2nt Count'].includes(activeMenu) && (
+                   <button onClick={() => { if(window.confirm("Hapus data ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                )}
+                <button onClick={() => {
+                  const ws = XLSX.utils.json_to_sheet(data);
+                  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
+                  XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
+                }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
               </>
             )}
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
@@ -295,7 +303,7 @@ function App() {
 
         <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Search..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
 
-        {/* --- DYNAMIC RENDERER --- */}
+        {/* --- DESKTOP VIEW --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
           <div style={gridContainer()}>
             {filteredData.map((row, idx) => (
@@ -310,13 +318,14 @@ function App() {
             <table style={tableStyle}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff' }}>
                 <tr style={{ background: '#fafafa' }}>
-                  {/* Dynamic Header */}
-                  {activeMenu === 'Explorer' ? (
+                  {activeMenu === 'Packing' ? (
+                    <><th style={thStyle}>ID</th><th style={thStyle}>BOX NO</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME</th><th style={thStyle}>HUID</th><th style={thStyle}>CONT NO</th><th style={thStyle}>TYPE</th><th style={thStyle}>KG</th><th style={thStyle}>STATUS</th></>
+                  ) : activeMenu === 'Picking' ? (
+                    <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>STATUS</th><th style={thStyle}>REASON</th></>
+                  ) : activeMenu === 'Explorer' ? (
                     <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
-                  ) : activeMenu === 'Picking' || activeMenu === 'Packing' ? (
-                    <><th style={thStyle}>TIME</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU / HUID</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th></>
                   ) : activeMenu === 'Master Lokasi' ? (
-                    <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                    <><th style={thStyle}><input type="checkbox" onChange={() => { if(selectedRows.length === filteredData.length) setSelectedRows([]); else setSelectedRows(filteredData.map(d => d.location_id || d.unique_id)); }} /></th><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
                   ) : activeMenu === 'Reconciliation' ? (
                     <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                   ) : (
@@ -327,16 +336,18 @@ function App() {
               <tbody>
                 {filteredData.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                    {activeMenu === 'Explorer' ? (
-                      <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdDescSmall}>{row.description}</td><td style={tdStyle}>{row.qty_req}</td><td style={tdStyle}>{row.qty_picked}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}><span style={statusBadge(row.status)}>{row.status}</span></td></>
-                    ) : activeMenu === 'Picking' || activeMenu === 'Packing' ? (
-                      <><td style={tdStyle}>{new Date(row.scanned_at || row.created_at).toLocaleString('id-ID')}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id || row.huid}</td><td style={tdStyle}>{row.qty_picked || row.qty_packed || row.qty}</td><td style={tdStyle}>{row.scanned_by || row.operator}</td></>
+                    {activeMenu === 'Packing' ? (
+                      <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.box_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.scanned_by}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdStyle}>{row.huid}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.container_type}</td><td style={tdStyle}>{row.weight_kg}</td><td style={tdStyle}>{row.status}</td></>
+                    ) : activeMenu === 'Picking' ? (
+                      <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.status}</td><td style={tdStyle}>{row.inventory_reason}</td></>
+                    ) : activeMenu === 'Explorer' ? (
+                      <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdDescSmall}>{row.description}</td><td style={tdStyle}>{row.qty_req}</td><td style={{...tdStyle, color: row.qty_picked >= row.qty_req ? 'green' : 'red', fontWeight: 800}}>{row.qty_picked}</td><td style={{...tdStyle, color: row.qty_packed >= row.qty_req ? 'green' : 'red', fontWeight: 800}}>{row.qty_packed}</td><td style={tdStyle}><span style={statusBadge(row.status)}>{row.status}</span></td></>
                     ) : activeMenu === 'Master Lokasi' ? (
-                      <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color: row.assign === 'open' ? 'green' : 'red', fontWeight: 800}}>{row.assign?.toUpperCase()}</td></>
+                      <><td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row.location_id || row.unique_id)} onChange={() => setSelectedRows(p => p.includes(row.location_id || row.unique_id) ? p.filter(x => x !== (row.location_id || row.unique_id)) : [...p, (row.location_id || row.unique_id)])} /></td><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.zone || '-'}</td><td style={tdStyle}>{row.aisle || '-'}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, fontWeight:800, color: row.assign === 'open' ? 'green' : 'red'}}>{row.assign?.toUpperCase()}</td></>
                     ) : activeMenu === 'Reconciliation' ? (
-                      <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(row.qty_2nd || row.qty_1st || 0) - (row.qty_snap || 0)}</td><td style={tdStyle}>{row.final_status}</td></>
+                      <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, fontWeight:900, color: (Number(row.qty_2nd || row.qty_1st || 0) - Number(row.qty_snap || 0)) !== 0 ? 'red' : 'green'}}>{(Number(row.qty_2nd || row.qty_1st || 0) - Number(row.qty_snap || 0)) > 0 ? `+${(Number(row.qty_2nd || row.qty_1st || 0) - Number(row.qty_snap || 0))}` : (Number(row.qty_2nd || row.qty_1st || 0) - Number(row.qty_snap || 0))}</td><td style={tdStyle}>{row.final_status}</td></>
                     ) : (
-                      <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                      <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_2nd}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                     )}
                   </tr>
                 ))}
@@ -345,7 +356,7 @@ function App() {
           </div>
         )}
 
-        {/* --- MOBILE FORMS REMAINS THE SAME --- */}
+        {/* --- MOBILE UI: FORM EXECUTION ONLY (V5 UTUH) --- */}
         {isMobile && activeMenu === '1st Count' && (
            <div style={formWrapper}>
               {locInfo && (
@@ -371,10 +382,9 @@ function App() {
               <button onClick={handleSaveInput} style={btnBlack}>SAVE 1ST COUNT</button>
            </div>
         )}
-        {/* ... Rest of Mobile UI for 2nd Count and Reconcile remains identical ... */}
       </div>
 
-      {/* --- ADD FORM POPUP --- */}
+      {/* --- POPUP ADD NEW (V5 REFINED) --- */}
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
@@ -403,7 +413,7 @@ function App() {
   );
 }
 
-/* ================= STYLES (NO CHANGES TO CORE) ================= */
+/* ================= STYLES (V5 KUNCI) ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const statusBadge = (s) => ({ padding: '2px 8px', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 800, background: s?.includes('Packed') ? '#dcfce7' : '#fef9c3', color: s?.includes('Packed') ? '#166534' : '#854d0e' });
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
@@ -413,11 +423,11 @@ const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgrou
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
-const navItem = (a) => ({ padding: '15px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display: 'flex', alignItems: 'center' });
+const navItem = (a) => ({ padding: '15px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', fontSize: '0.7rem' });
 const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 220px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
-const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
-const tdStyle = { padding: '10px' };
+const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
 const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999', textAlign: 'left' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
