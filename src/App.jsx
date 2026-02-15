@@ -10,12 +10,11 @@ import {
   Truck, Package, Globe, Printer
 } from 'lucide-react';
 
-/* --- API ENDPOINTS --- */
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
 function App() {
-  /* ================= 1. STATE (V14 CHECKPOINT + UPDATES) ================= */
+  /* ================= 1. STATE (V14 STANDARDIZED - UTUH) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -36,7 +35,7 @@ function App() {
   const [selectedRows, setSelectedRows] = useState([]); 
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
 
-  /* Mobile Execution States */
+  /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -45,7 +44,7 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* Print Label States (Double Filter) */
+  /* Print Label States (New) */
   const [selectedPcb, setSelectedPcb] = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions] = useState([]);
@@ -61,7 +60,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Otomatis --- */
+  /* --- Logika Unique ID Otomatis (V14) --- */
   useEffect(() => {
     if (newLoc.id && newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
@@ -84,19 +83,17 @@ function App() {
     return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
   };
 
-  /* ================= 3. FETCHING (PELAN & TELITI) ================= */
+  /* ================= 3. FETCHING (V14 BASED + INTEGRATED) ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
     try {
       const outboundMenus = ['Picking', 'Packing', 'Explorer', 'Print Label'];
-      const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
-
       const targetMap = {
         'Master Lokasi': masterTab === 'database' ? 'master_all' : 'master',
         'Snapshoot': 'snapshot_list',
         '1st Count': 'first', 
-        '2nt Count': isMobile ? 'recon' : 'second', 
+        '2nt Count': 'second', 
         'Reconciliation': 'recon',
         'Picking': 'picking_transactions',
         'Packing': 'packing_transactions',
@@ -104,6 +101,7 @@ function App() {
         'Print Label': 'packing_transactions'
       };
 
+      const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
       const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
       const rawRes = res.data?.data || [];
 
@@ -118,6 +116,7 @@ function App() {
         setData(rawRes);
       }
       
+      // Load cache inventory
       axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
       axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => setReconCache(rr.data?.data || []));
 
@@ -127,13 +126,13 @@ function App() {
 
   useEffect(() => { fetchData(); }, [activeMenu, masterTab, isLoggedIn]);
 
-  /* ================= 4. HANDLERS ================= */
+  /* ================= 4. HANDLERS (V14 UTUH) ================= */
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
       const res = await axios.post(`${API_BASE}?action=login`, { username, password });
       if (res.data?.status === 'success') { setUser(res.data.user); setIsLoggedIn(true); }
-      else showToast("Password Salah", "error");
+      else showToast("Password/User Salah", "error");
     } catch (e) { showToast("Server Error", "error"); }
     finally { setLoginLoading(false); }
   };
@@ -146,13 +145,30 @@ function App() {
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setLoading(true);
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
+        showToast("Snapshot Terupload!"); fetchData();
+      } catch (err) { showToast("Gagal Upload", "error"); }
+      finally { setLoading(false); e.target.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleSaveInput = async () => {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
     
     if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
-        return showToast("SUDAH DISCAN!", "error");
+        return showToast("BARANG SUDAH DISCAN!", "error");
     }
 
     if (activeMenu === '2nt Count' && selectedLoc2nd) {
@@ -176,23 +192,6 @@ function App() {
     finally { setLoading(false); }
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      setLoading(true);
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        showToast("Snapshot Terupload!"); fetchData();
-      } catch (err) { showToast("Gagal Upload", "error"); }
-      finally { setLoading(false); e.target.value = ''; }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
   const handleBulkDelete = async () => {
     if (selectedRows.length === 0) return;
     if (!window.confirm(`Hapus ${selectedRows.length} item?`)) return;
@@ -211,7 +210,7 @@ function App() {
     setSelectedBoxHuid('');
   };
 
-  /* ================= 5. RENDER PRINT COMPONENT ================= */
+  /* ================= 5. RENDER PRINT LAYOUT ================= */
   const PrintLayout = ({ box }) => {
     if (!box) return null;
     const pages = [];
@@ -221,55 +220,55 @@ function App() {
     return (
       <div className="print-only">
         {pages.map((pItems, idx) => (
-          <div key={idx} className="label-v15">
+          <div key={idx} className="label-v16">
             <div className="unboxing-banner">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
             <div className="label-header">
-               <div className="pt-col">
-                  <div className="pt-title">PT DUA PULUH TIGA</div>
-                  <div className="pt-addr">Jl. kopo Bihbul Raya no 68<br/>Kab. Bandung</div>
+               <div className="pt-info">
+                  <div className="pt-name">PT DUA PULUH TIGA</div>
+                  <div className="pt-address">Jl. kopo Bihbul Raya no 68, Bandung</div>
                </div>
-               <div className="huid-col">
-                  <div className="huid-row">HUID: <b>{box.huid}</b></div>
-                  <QRCode value={box.huid || ''} size={50} />
+               <div className="huid-info">
+                  <div className="huid-text">HUID: <b>{box.huid}</b></div>
+                  <QRCode value={box.huid || ''} size={48} />
                </div>
             </div>
-            <div className="line-thick" />
-            <div className="info-grid">
-               <div className="grid-cell">{box.picklist_number}</div>
-               <div className="grid-cell">{box.nama_toko || 'ST EX BAHUREKSA'}</div>
-               <div className="grid-cell">-</div>
+            <div className="border-black-thick" />
+            <div className="store-grid">
+               <div className="grid-item"><b>{box.picklist_number}</b></div>
+               <div className="grid-item"><b>{box.nama_toko || '-'}</b></div>
+               <div className="grid-item"><b>{box.alamat_toko || '-'}</b></div>
             </div>
-            <div className="line-thick" />
+            <div className="border-black-thick" />
             <div className="content-header">
                <span>BOX CONTENT</span>
                <span style={{float:'right'}}>BOX {box.container_number} ({idx+1}/{pages.length})</span>
             </div>
-            <table className="label-table">
+            <table className="content-table">
                <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
                <tbody>
                   {pItems.map((it, k) => (
                     <tr key={k}>
                       <td>{it.sku}</td>
-                      <td className="trunc-cell">{it.name || '-'}</td>
+                      <td className="truncate-cell">{it.name || '-'}</td>
                       <td style={{textAlign:'center'}}>{it.qty}</td>
                     </tr>
                   ))}
                </tbody>
             </table>
-            <div className="line-thick" style={{marginTop:'auto'}} />
-            <div className="label-footer">
-               <div className="foot-row">
-                  <span><span className="red-label">Packer :</span> <b>{box.scanned_by}</b></span>
-                  <span><span className="red-label">Total Qty:</span> <b>{box.qty_packed} PCS</b></span>
+            <div className="border-black-thick" style={{marginTop:'auto'}} />
+            <div className="footer-summary">
+               <div className="footer-row">
+                  <span><span className="red-text">Packer :</span> <b>{box.scanned_by}</b></span>
+                  <span><span className="red-text">Total Qty:</span> <b>{box.qty_packed} PCS</b></span>
                </div>
-               <div className="foot-row">
-                  <span><span className="red-label">Tanggal :</span> <b>{box.scanned_at?.substring(0,10)}</b></span>
-                  <span><span className="red-label">Berat :</span> <b>{box.weight_kg || '0.0'} KG</b></span>
+               <div className="footer-row">
+                  <span><span className="red-text">Tanggal :</span> <b>{box.scanned_at?.substring(0,10)}</b></span>
+                  <span><span className="red-text">Berat :</span> <b>{box.weight_kg || '0.0'} KG</b></span>
                </div>
             </div>
-            <div className="barcode-area">
-               <div className="sj-text">NO SJ : {box.picklist_number}</div>
-               <Barcode value={box.picklist_number || ''} width={1.8} height={45} fontSize={0} margin={0} />
+            <div className="sj-barcode-area">
+               <div className="sj-title">NO SJ : {box.no_sj || box.picklist_number}</div>
+               <Barcode value={box.no_sj || box.picklist_number || ''} width={1.8} height={45} fontSize={0} margin={0} />
             </div>
           </div>
         ))}
@@ -277,7 +276,7 @@ function App() {
     );
   };
 
-  /* ================= 6. MAIN UI ================= */
+  /* ================= 6. RENDER UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -333,27 +332,26 @@ function App() {
         @media print {
           .no-print { display: none !important; }
           .print-only { display: block !important; }
-          .label-v15 { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
+          .label-v16 { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
           .unboxing-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
           .label-header { display: flex; justify-content: space-between; padding: 4px; }
-          .pt-title { font-weight: 900; font-size: 13pt; }
-          .pt-addr { font-size: 8pt; line-height: 1.1; }
-          .huid-col { text-align: right; }
-          .huid-row { font-size: 9pt; margin-bottom: 2px; }
-          .line-thick { height: 2px; background: #000; margin: 2px 0; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; border: 1.5px solid #000; margin: 2px 0; }
-          .grid-cell { border-right: 1.5px solid #000; padding: 4px; font-size: 9pt; font-weight: bold; text-align: center; }
-          .grid-cell:last-child { border-right: none; }
+          .pt-name { font-weight: 900; font-size: 13pt; }
+          .pt-address { font-size: 8pt; line-height: 1.1; }
+          .huid-text { font-size: 9pt; margin-bottom: 2px; }
+          .border-black-thick { height: 2px; background: #000; margin: 2px 0; }
+          .store-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; margin: 2px 0; }
+          .grid-item { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .grid-item:last-child { border-right: none; }
           .content-header { font-weight: bold; font-size: 9pt; padding: 2px; }
-          .label-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-          .label-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #ccc; }
-          .label-table td { padding: 2px; border-bottom: 0.2px solid #eee; }
-          .trunc-cell { max-width: 4.5cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-          .label-footer { padding: 4px; font-size: 8pt; }
-          .foot-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
-          .red-label { color: #FF0000; font-weight: bold; }
-          .barcode-area { text-align: center; margin-top: auto; padding-bottom: 2mm; }
-          .sj-text { font-weight: bold; font-size: 10pt; margin-bottom: 2px; }
+          .content-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+          .content-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
+          .content-table td { padding: 2px; border: 0.5px solid #ccc; }
+          .truncate-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .footer-summary { padding: 4px; font-size: 8pt; }
+          .footer-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+          .red-text { color: #FF0000; font-weight: bold; }
+          .sj-barcode-area { text-align: center; margin-top: auto; padding-bottom: 2mm; }
+          .sj-title { font-weight: bold; font-size: 10pt; margin-bottom: 2px; }
         }
         .print-only { display: none; }
       `}</style>
@@ -393,15 +391,12 @@ function App() {
             {!isMobile && (
               <>
                 {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
-                  <>
-                    <button onClick={handleBulkDelete} disabled={selectedRows.length === 0} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> DELETE</button>
-                    <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
-                  </>
+                  <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
                 )}
                 {activeMenu === 'Snapshoot' && (
                    <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
                 )}
-                {/* --- TOMBOL CLEAR KEMBALI LAGI --- */}
+                {/* --- TOMBOL CLEAR V14 BASED --- */}
                 {['1st Count', '2nt Count', 'Snapshoot'].includes(activeMenu) && (
                    <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':'snap'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
                 )}
@@ -419,6 +414,7 @@ function App() {
           </div>
         </header>
 
+        {/* TAB MASTER LOKASI (PC ONLY) */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={{display:'flex', gap:15, marginBottom:20, borderBottom:'1px solid #eee'}}>
              <div onClick={()=>setMasterTab('grid')} style={tabItem(masterTab === 'grid')}><LayoutGrid size={14}/> ASSIGN CC</div>
@@ -430,7 +426,7 @@ function App() {
             <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
-        {/* --- DYNAMIC VIEW RENDERER --- */}
+        {/* DYNAMIC RENDERER */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
            <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
@@ -453,7 +449,7 @@ function App() {
                     <option value="">-- PILIH BOX --</option>
                     {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
                  </select>
-                 {selectedBoxHuid && <div style={boxInfo}>HUID: {selectedBoxHuid}<br/>Items: {boxOptions.find(b=>b.huid===selectedBoxHuid)?.item_details?.length} SKU</div>}
+                 {selectedBoxHuid && <div style={boxInfo}><b>HUID:</b> {selectedBoxHuid}<br/><b>Items:</b> {boxOptions.find(b=>b.huid===selectedBoxHuid)?.item_details?.length} SKU</div>}
               </div>
               <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', overflow:'hidden'}}>
                  <div style={{transform:'scale(0.7)', border:'1px solid #ddd', background:'#fff', width:'10cm', height:'10cm'}}>
@@ -462,7 +458,7 @@ function App() {
               </div>
            </div>
         ) : (
-           (!isMobile || activeMenu === 'Reconciliation' || ['Picking','Packing','Explorer'].includes(activeMenu)) && (
+           (!isMobile || activeMenu === 'Reconciliation' || ['Picking','Packing','Explorer','2nt Count'].includes(activeMenu)) && (
              <div style={tableWrapper}>
                 <table style={tableStyle}>
                     <thead style={{position:'sticky', top:0, background:'#fff', zIndex:5}}>
@@ -471,13 +467,17 @@ function App() {
                             <th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(filteredData.map(d=>d.unique_id)) : setSelectedRows([]) } /></th>
                         )}
                         {activeMenu === 'Packing' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
+                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
                         ) : activeMenu === 'Picking' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
-                        ) : activeMenu === 'Master Lokasi' ? (
-                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>LOC</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME</th></>
+                        ) : activeMenu === 'Explorer' ? (
+                            <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
+                        ) : activeMenu === 'Reconciliation' ? (
+                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
+                        ) : activeMenu === '2nt Count' ? (
+                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY INPUT</th><th style={thStyle}>OPERATOR</th></>
                         ) : (
-                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
+                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>STATUS</th></>
                         )}
                     </tr>
                     </thead>
@@ -490,9 +490,15 @@ function App() {
                             {activeMenu === 'Packing' ? (
                                 <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
                             ) : activeMenu === 'Picking' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
+                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
+                            ) : activeMenu === 'Explorer' ? (
+                                <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdStyle}>{row.qty_req}</td><td style={tdStyle}>{row.qty_picked}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.status}</td></>
+                            ) : activeMenu === 'Reconciliation' ? (
+                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row.qty_2nd||row.qty_1st||0) - Number(row.qty_snap||0))}</td><td style={tdStyle}>{row.final_status}</td></>
+                            ) : activeMenu === '2nt Count' ? (
+                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty}</td><td style={tdStyle}>{row.operator}</td></>
                             ) : activeMenu === 'Master Lokasi' ? (
-                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
+                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
                             ) : (
                                 <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                             )}
@@ -504,7 +510,7 @@ function App() {
            )
         )}
 
-        {/* MOBILE EXECUTION: 1ST COUNT */}
+        {/* MOBILE FORMS */}
         {isMobile && activeMenu === '1st Count' && (
           <div style={formWrapper}>
              {locInfo && (
@@ -528,7 +534,6 @@ function App() {
           </div>
         )}
 
-        {/* MOBILE EXECUTION: 2ND COUNT */}
         {isMobile && activeMenu === '2nt Count' && (
            <div style={{display:'flex', flexDirection:'column', gap:10}}>
               <select style={mInput} onChange={e=>{const [l,a]=e.target.value.split('|'); setSelectedLoc2nd((reconCache || []).find(d=>d.location_id===l && d.artikel===a)); setMobLoc(''); setMobArt('');}}>
@@ -552,7 +557,7 @@ function App() {
         )}
       </div>
 
-      {/* POPUP SUKSES CENTANG HIJAU */}
+      {/* POPUP SUKSES */}
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
@@ -563,13 +568,38 @@ function App() {
         </div>
       )}
 
-      {/* PRINT LAYER */}
+      {/* POPUP ADD NEW */}
+      {showAddForm && (
+        <div style={popupOverlay}>
+          <div style={{...popupContent, textAlign:'left', padding:30}}>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
+            <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
+            <div style={{display:'flex', gap:10}}>
+              <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
+              <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
+            </div>
+            <label style={labelStyle}>UNIQUE ID</label><input style={{...mInput, background:'#f5f5f5'}} value={newLoc.unique} readOnly />
+            <label style={labelStyle}>STATUS</label>
+            <select style={mInput} value={newLoc.assign} onChange={e=>setNewLoc({...newLoc, assign: e.target.value})}>
+              <option value="closed">CLOSED</option>
+              <option value="open">OPEN</option>
+            </select>
+            <button onClick={async () => {
+              try {
+                await axios.post(`${API_BASE}?action=add_location`, { ...newLoc, location_id: newLoc.id.toUpperCase() });
+                showToast("Added!"); setShowAddForm(false); fetchData();
+              } catch (e) { showToast("Error!", "error"); }
+            }} style={{...btnBlack, marginTop:10}}>SAVE LOCATION</button>
+          </div>
+        </div>
+      )}
+
       <PrintLayout box={data.find(b=>b.huid===selectedBoxHuid)} />
     </div>
   );
 }
 
-/* ================= STYLES (UTUH & LENGKAP) ================= */
+/* ================= STYLES (TOTAL RECOVERY) ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const searchContainer = { position: 'relative', marginBottom: '15px' };
@@ -579,7 +609,7 @@ const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height:
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center', fontSize: '0.7rem' });
-const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' };
+const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
 const tdStyle = { padding: '10px', fontSize: '0.65rem' };
