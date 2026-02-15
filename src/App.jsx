@@ -10,11 +10,12 @@ import {
   Truck, Package, Globe, Printer
 } from 'lucide-react';
 
+/* --- API ENDPOINTS --- */
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
 function App() {
-  /* ================= 1. STATE (KOMPLIT) ================= */
+  /* ================= 1. STATE (KOMPLIT & TERPROTEKSI) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -27,6 +28,7 @@ function App() {
   
   const [data, setData] = useState([]);
   const [snapData, setSnapData] = useState([]);
+  const [reconCache, setReconCache] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [showMobileHome, setShowMobileHome] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,7 +36,7 @@ function App() {
   const [selectedRows, setSelectedRows] = useState([]); 
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
 
-  /* Mobile States */
+  /* Mobile Execution States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -51,14 +53,13 @@ function App() {
   const inputQtyRef = useRef(null);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Otomatis --- */
+  /* --- Logika Unique ID Otomatis (Master Lokasi) --- */
   useEffect(() => {
     if (newLoc.id && newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
@@ -81,7 +82,7 @@ function App() {
     return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
   };
 
-  /* ================= 3. FETCHING (SAFETY FIRST) ================= */
+  /* ================= 3. FETCHING (PELAN & TELITI) ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
@@ -102,7 +103,7 @@ function App() {
       };
 
       const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
-      const rawRes = Array.isArray(res.data?.data) ? res.data.data : [];
+      const rawRes = res.data?.data || [];
 
       if (activeMenu === 'Print Label') {
         const grouped = rawRes.reduce((acc, curr) => {
@@ -115,22 +116,20 @@ function App() {
         setData(rawRes);
       }
       
-      // Load cache inventory data
+      // Load Cache Background untuk Logika Mobile
       axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
-      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => { window.reconCacheData = rr.data?.data || []; });
+      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => setReconCache(rr.data?.data || []));
 
     } catch (e) { 
-      console.error(e);
       setData([]); 
+      showToast("Gagal tarik data", "error");
     } finally { 
       setLoading(false); 
       setSelectedRows([]); 
     }
   };
 
-  useEffect(() => { 
-    if (isLoggedIn) fetchData(); 
-  }, [activeMenu, masterTab, isLoggedIn]);
+  useEffect(() => { fetchData(); }, [activeMenu, masterTab, isLoggedIn]);
 
   /* ================= 4. HANDLERS ================= */
   const handleLogin = async () => {
@@ -155,36 +154,6 @@ function App() {
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
-  const handleSaveInput = async () => {
-    if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
-    const locU = mobLoc.trim().toUpperCase();
-    const artU = mobArt.trim().toUpperCase();
-    
-    if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
-        return showToast("BARANG SUDAH DISCAN!", "error");
-    }
-
-    if (activeMenu === '2nt Count' && selectedLoc2nd) {
-      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return showToast("Validasi Gagal!", "error");
-      }
-    }
-
-    setLoading(true);
-    try {
-      await axios.post(`${API_BASE}?action=save_input`, { location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu });
-      showToast("Tersimpan!"); setMobArt(''); setMobQty(''); 
-      
-      if (activeMenu === '1st Count' && locInfo) {
-          const remain = locInfo.filter(item => !data.some(d => d.location_id === locU && d.artikel === item.artikel) && item.artikel !== artU);
-          if (remain.length === 0) { setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); }
-      }
-      fetchData(); 
-      if (inputArtRef.current) setTimeout(() => inputArtRef.current.focus(), 50);
-    } catch (e) { showToast("Gagal Simpan", "error"); }
-    finally { setLoading(false); }
-  };
-
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -200,6 +169,46 @@ function App() {
       finally { setLoading(false); e.target.value = ''; }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleSaveInput = async () => {
+    if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
+    const locU = mobLoc.trim().toUpperCase();
+    const artU = mobArt.trim().toUpperCase();
+    
+    // Anti-Double Scan (1st Count)
+    if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
+        return showToast("BARANG SUDAH DISCAN!", "error");
+    }
+
+    // Validasi 2nd Count
+    if (activeMenu === '2nt Count' && selectedLoc2nd) {
+      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
+        return showToast("Validasi Gagal!", "error");
+      }
+    }
+
+    setLoading(true);
+    try {
+      await axios.post(`${API_BASE}?action=save_input`, { 
+        location_id: locU, 
+        artikel: artU, 
+        qty: parseInt(mobQty), 
+        operator: user?.username, 
+        target_table: activeMenu 
+      });
+      showToast("Tersimpan!"); setMobArt(''); setMobQty(''); 
+      
+      // Pop-up sakti centang hijau
+      if (activeMenu === '1st Count' && locInfo) {
+          const remain = locInfo.filter(item => !data.some(d => d.location_id === locU && d.artikel === item.artikel) && item.artikel !== artU);
+          if (remain.length === 0) { setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); }
+      }
+      
+      fetchData(); 
+      if (inputArtRef.current) setTimeout(() => inputArtRef.current.focus(), 50);
+    } catch (e) { showToast("Gagal Simpan", "error"); }
+    finally { setLoading(false); }
   };
 
   const handleBulkDelete = async () => {
@@ -221,7 +230,7 @@ function App() {
     return id.includes(s) || art.includes(s) || getDesc(item).toLowerCase().includes(s);
   });
 
-  /* ================= 5. PRINT COMPONENTS ================= */
+  /* ================= 5. RENDER PRINT LAYOUT ================= */
   const PrintLayout = ({ box }) => {
     if (!box || !box.item_details) return null;
     const pages = [];
@@ -258,7 +267,7 @@ function App() {
     );
   };
 
-  /* ================= 6. RENDER LOGIC (ANTI-BLANK) ================= */
+  /* ================= 6. MAIN UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -277,9 +286,8 @@ function App() {
 
   // --- MOBILE HOME ---
   if (isMobile && showMobileHome) {
-    const cache = window.reconCacheData || [];
-    const b1 = cache.filter(d => d.final_status === 'NEED 1ST COUNT').length;
-    const b2 = cache.filter(d => d.final_status === 'NEED 2ND COUNT').length;
+    const b1 = (reconCache || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
+    const b2 = (reconCache || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
     return (
       <div style={mobileHomeLayout}>
         {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
@@ -304,6 +312,7 @@ function App() {
 
   return (
     <div style={mainLayout}>
+      {/* CSS KHUSUS PRINT */}
       <style>{`
         @media print { .no-print { display: none !important; } .print-only { display: block !important; } .label-container { width: 10cm; height: 10cm; padding: 2mm; box-sizing: border-box; page-break-after: always; background: white; } .unboxing-tag { background: #000; color: #fff; text-align: center; font-size: 7pt; font-weight: bold; padding: 1mm; } .label-header { display: flex; justify-content: space-between; margin-top: 1mm; } .divider-line { height: 1.5pt; background: #000; margin: 1mm 0; } .toko-grid { display: grid; grid-template-columns: 1fr 1fr; font-size: 9pt; font-weight: bold; text-align: center; } .table-print { width: 100%; border-collapse: collapse; font-size: 7pt; height: 4.8cm; } .table-print th { border-bottom: 1px solid #000; text-align: left; } .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .label-footer { display: grid; grid-template-columns: 1fr 1fr; font-size: 7pt; color: red; font-weight: bold; } .barcode-render { text-align: center; margin-top: 1mm; } }
         .print-only { display: none; }
@@ -311,6 +320,7 @@ function App() {
       
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
       
+      {/* --- SIDEBAR PC --- */}
       {!isMobile && (
         <nav style={sidebarStyle()}>
           <div style={{ padding: 20, fontWeight: 900 }}>COOL SYSTEM</div>
@@ -321,17 +331,20 @@ function App() {
           <div style={menuSectionLabel}>OUTBOUND</div>
           {['Picking', 'Packing', 'Explorer', 'Print Label'].map(m => (
             <div key={m} onClick={() => { setActiveMenu(m); setSearchTerm(''); }} style={navItem(activeMenu === m)}>
-                {m === 'Picking' && <Truck size={14} style={{marginRight:8}}/>}
-                {m === 'Packing' && <Package size={14} style={{marginRight:8}}/>}
-                {m === 'Explorer' && <Globe size={14} style={{marginRight:8}}/>}
-                {m === 'Print Label' && <Printer size={14} style={{marginRight:8}}/>}
-                {m}
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  {m === 'Picking' && <Truck size={14}/>}
+                  {m === 'Packing' && <Package size={14}/>}
+                  {m === 'Explorer' && <Globe size={14}/>}
+                  {m === 'Print Label' && <Printer size={14}/>}
+                  {m}
+                </div>
             </div>
           ))}
           <button onClick={() => setIsLoggedIn(false)} style={btnLogout}><LogOut size={14} /></button>
         </nav>
       )}
 
+      {/* --- CONTENT AREA --- */}
       <div style={contentArea(isMobile)} className="no-print">
         <header style={headerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -339,22 +352,35 @@ function App() {
             <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'database' && (
+            {!isMobile && (
               <>
-                <button onClick={handleBulkDelete} disabled={selectedRows.length === 0} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> DELETE</button>
-                <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
+                {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
+                  <>
+                    <button onClick={handleBulkDelete} disabled={selectedRows.length === 0} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> DELETE</button>
+                    <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
+                  </>
+                )}
+                {activeMenu === 'Snapshoot' && (
+                   <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
+                )}
+                {['1st Count', '2nt Count'].includes(activeMenu) && (
+                   <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                )}
+                {activeMenu === 'Print Label' && selectedBoxPrint && (
+                  <button onClick={()=>window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
+                )}
+                <button onClick={() => {
+                  const ws = XLSX.utils.json_to_sheet(data);
+                  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
+                  XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
+                }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
               </>
-            )}
-            {!isMobile && activeMenu === 'Snapshoot' && (
-              <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
-            )}
-            {!isMobile && activeMenu === 'Print Label' && selectedBoxPrint && (
-               <button onClick={()=>window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
             )}
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
         </header>
 
+        {/* TAB SWITCHER PC */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={{display:'flex', gap:15, marginBottom:20, borderBottom:'1px solid #eee'}}>
              <div onClick={()=>setMasterTab('grid')} style={tabItem(masterTab === 'grid')}><LayoutGrid size={14}/> ASSIGN CC</div>
@@ -362,16 +388,17 @@ function App() {
           </div>
         )}
 
+        {/* SEARCH BAR (Cerdas: Sembunyi saat scan mobile) */}
         {!(isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count')) && (
             <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
-        {/* --- CONTENT RENDERER --- */}
+        {/* RENDER CONTENT DYNAMICALY */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
            <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
                 <div key={idx} style={cardGrid}>
-                  <span style={{ fontWeight: 800 }}>{row.unique_id}</span>
+                  <span style={{ fontWeight: 800, marginBottom: 5 }}>{row.unique_id}</span>
                   <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
                 </div>
               ))}
@@ -390,15 +417,21 @@ function App() {
               </div>
            </div>
         ) : (
+           /* DEFAULT TABLE VIEW */
            (!isMobile || activeMenu === 'Reconciliation' || ['Picking','Packing','Explorer'].includes(activeMenu)) && (
              <div style={tableWrapper}>
                 <table style={tableStyle}>
                     <thead>
                       <tr style={{background:'#fafafa'}}>
+                        {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
+                            <th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(filteredData.map(d=>d.unique_id)) : setSelectedRows([]) } /></th>
+                        )}
                         {activeMenu === 'Packing' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
+                            <><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
+                        ) : activeMenu === 'Picking' ? (
+                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
                         ) : activeMenu === 'Master Lokasi' ? (
-                            <><th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(filteredData.map(d=>d.unique_id)) : setSelectedRows([]) } /></th><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
                         ) : (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
                         )}
@@ -407,10 +440,15 @@ function App() {
                     <tbody>
                     {filteredData.map((row, i)=>(
                         <tr key={i} style={{borderBottom:'1px solid #eee'}}>
+                            {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
+                                <td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row.unique_id)} onChange={() => setSelectedRows(p => p.includes(row.unique_id) ? p.filter(x => x !== row.unique_id) : [...p, row.unique_id])} /></td>
+                            )}
                             {activeMenu === 'Packing' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
+                                <><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
+                            ) : activeMenu === 'Picking' ? (
+                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
                             ) : activeMenu === 'Master Lokasi' ? (
-                                <><td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row.unique_id)} onChange={() => setSelectedRows(p => p.includes(row.unique_id) ? p.filter(x => x !== row.unique_id) : [...p, row.unique_id])} /></td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
+                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
                             ) : (
                                 <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                             )}
@@ -422,60 +460,70 @@ function App() {
            )
         )}
 
-        {/* MOBILE FORMS */}
+        {/* MOBILE EXECUTION: 1ST COUNT */}
         {isMobile && activeMenu === '1st Count' && (
           <div style={formWrapper}>
              {locInfo && (
                 <div style={boxInfo}>
+                  <div style={boxTitle}>REFERENSI LOKASI: {mobLoc}</div>
                   {locInfo.map((it, idx)=>(
-                    <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0'}}>
+                    <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #eee'}}>
                        <div><b>{it.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(it)}</span></div>
                        {data.some(d=>d.location_id===mobLoc && d.artikel===it.artikel) && <Check size={16} color="green"/>}
                     </div>
                   ))}
                 </div>
              )}
-             <input ref={inputLocRef} value={mobLoc} style={mInput} placeholder="SCAN LOKASI" onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8){setLocInfo(snapData.filter(d=>String(d.location_id).toUpperCase()===v)); inputArtRef.current?.focus();}}} />
-             <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="SCAN ARTIKEL" onChange={e=>{const v=e.target.value.toUpperCase(); setMobArt(v); if(v.length>=12) inputQtyRef.current?.focus();}} />
+             <label style={labelStyle}>SCAN LOKASI</label>
+             <input ref={inputLocRef} value={mobLoc} style={mInput} autoFocus placeholder="SCAN LOKASI..." onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8){setLocInfo(snapData.filter(d=>String(d.location_id).toUpperCase()===v)); inputArtRef.current?.focus();}}} />
+             <label style={labelStyle}>SCAN ARTIKEL</label>
+             <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="SCAN ARTIKEL..." onChange={e=>{const v=e.target.value.toUpperCase(); setMobArt(v); if(v.length>=12) inputQtyRef.current?.focus();}} />
+             <label style={labelStyle}>QTY</label>
              <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
-             <button onClick={handleSaveInput} style={btnBlack}>SAVE</button>
+             <button onClick={handleSaveInput} style={btnBlack}>SIMPAN DATA</button>
           </div>
         )}
 
+        {/* MOBILE EXECUTION: 2ND COUNT */}
         {isMobile && activeMenu === '2nt Count' && (
            <div style={{display:'flex', flexDirection:'column', gap:10}}>
-              <select style={mInput} onChange={e=>{const [l,a]=e.target.value.split('|'); setSelectedLoc2nd((window.reconCacheData || []).find(d=>d.location_id===l && d.artikel===a)); setMobLoc(''); setMobArt('');}}>
+              <select style={mInput} onChange={e=>{const [l,a]=e.target.value.split('|'); setSelectedLoc2nd((reconCache || []).find(d=>d.location_id===l && d.artikel===a)); setMobLoc(''); setMobArt('');}}>
                  <option value="">-- PILIH NEED 2ND --</option>
-                 {(window.reconCacheData || []).filter(d=>d.final_status==='NEED 2ND COUNT').map((t,i)=>(<option key={i} value={`${t.location_id}|${t.artikel}`}>{t.location_id} | {t.artikel}</option>))}
+                 {(reconCache || []).filter(d=>d.final_status==='NEED 2ND COUNT').map((t,i)=>(<option key={i} value={`${t.location_id}|${t.artikel}`}>{t.location_id} | {t.artikel}</option>))}
               </select>
               {selectedLoc2nd && (
                 <div style={formWrapper}>
-                   <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>{getDesc(selectedLoc2nd)}<br/>Snap: {selectedLoc2nd.qty_snap}</div>
-                   <input value={mobLoc} style={mInput} placeholder="LOKASI" onChange={e=>{setMobLoc(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.location_id) inputArtRef.current?.focus();}} />
-                   <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="ARTIKEL" onChange={e=>{setMobArt(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.artikel) inputQtyRef.current?.focus();}} />
+                   <div style={boxInfoYellow}>
+                      <b>{selectedLoc2nd.artikel}</b><br/>
+                      <span style={{fontSize:'0.65rem'}}>{getDesc(selectedLoc2nd)}</span><br/>
+                      Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}
+                   </div>
+                   <input value={mobLoc} style={mInput} placeholder="VALIDASI LOKASI" onChange={e=>{setMobLoc(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.location_id) inputArtRef.current?.focus();}} />
+                   <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="VALIDASI ARTIKEL" onChange={e=>{setMobArt(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.artikel) inputQtyRef.current?.focus();}} />
                    <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
-                   <button onClick={handleSaveInput} style={btnBlack}>SAVE 2ND</button>
+                   <button onClick={handleSaveInput} disabled={mobLoc!==selectedLoc2nd.location_id} style={btnBlack}>SAVE 2ND COUNT</button>
                 </div>
               )}
            </div>
         )}
       </div>
 
-      {/* POPUP SUKSES */}
+      {/* POPUP SUKSES CENTANG HIJAU (V5) */}
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
             <div style={circleCheck}><Check size={40} color="#fff" /></div>
-            <h2 style={{fontWeight:900, marginTop:20}}>SELESAI!</h2>
-            <button style={{...btnBlack, marginTop:20}} onClick={()=>setShowCompletePopup(false)}>LANJUT</button>
+            <h2 style={{fontWeight:900, marginTop:20}}>LOKASI SELESAI!</h2>
+            <p style={{fontSize:'0.8rem', color:'#666'}}>Semua barang sudah sesuai referensi.</p>
+            <button style={{...btnBlack, marginTop:20}} onClick={()=>setShowCompletePopup(false)}>LANJUT LOKASI LAIN</button>
           </div>
         </div>
       )}
 
-      {/* HIDDEN PRINT */}
+      {/* PRINT LAYER */}
       <PrintLayout box={selectedBoxPrint} />
 
-      {/* ADD NEW POPUP */}
+      {/* POPUP ADD NEW (PC) */}
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
@@ -486,17 +534,17 @@ function App() {
               <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
             </div>
             <label style={labelStyle}>UNIQUE ID</label><input style={{...mInput, background:'#f5f5f5'}} value={newLoc.unique} readOnly />
-            <label style={labelStyle}>ASSIGN STATUS</label>
+            <label style={labelStyle}>STATUS</label>
             <select style={mInput} value={newLoc.assign} onChange={e=>setNewLoc({...newLoc, assign: e.target.value})}>
               <option value="closed">CLOSED</option>
               <option value="open">OPEN</option>
             </select>
             <button onClick={async () => {
               try {
-                await axios.post(`${API_INVENTORY}?action=add_location`, { location_id: newLoc.id.toUpperCase(), zone: newLoc.zone, aisle: newLoc.aisle, unique_id: newLoc.unique, assign: newLoc.assign });
-                showToast("Berhasil!"); setShowAddForm(false); fetchData();
-              } catch (e) { showToast("Error", "error"); }
-            }} style={{...btnBlack, marginTop:10}}>SAVE</button>
+                await axios.post(`${API_BASE}?action=add_location`, { ...newLoc, location_id: newLoc.id.toUpperCase() });
+                showToast("Added!"); setShowAddForm(false); fetchData();
+              } catch (e) { showToast("Gagal Tambah", "error"); }
+            }} style={{...btnBlack, marginTop:10}}>SAVE LOCATION</button>
           </div>
         </div>
       )}
@@ -504,7 +552,7 @@ function App() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLES (UTUH TANPA RINGKAS) ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const searchContainer = { position: 'relative', marginBottom: '15px' };
@@ -513,11 +561,11 @@ const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgrou
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
-const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center' });
-const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' };
+const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center', fontSize: '0.7rem' });
+const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
-const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
-const tdStyle = { padding: '10px', fontSize: '0.65rem' };
+const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
 const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
@@ -542,7 +590,12 @@ const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'10
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (t) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: t === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
 const circleCheck = { width: 60, height: 60, borderRadius: 30, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' };
-const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
 const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
+const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
+const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
+const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
+const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
+const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
+const infoLine = { borderBottom: '1px solid #e2e8f0', padding: '5px 0' };
 
 export default App;
