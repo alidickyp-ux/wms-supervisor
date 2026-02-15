@@ -14,7 +14,7 @@ const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
 function App() {
-  /* ================= 1. STATE (KOMPLIT V5 + V6) ================= */
+  /* ================= 1. STATE (STANDAR V5 + V6 LENGKAP) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -22,7 +22,7 @@ function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
-  const [masterTab, setMasterTab] = useState('grid'); // Kunci PC: Untuk switch Assign/Database
+  const [masterTab, setMasterTab] = useState('grid'); 
   const [showAddForm, setShowAddForm] = useState(false);
   
   const [data, setData] = useState([]);
@@ -34,16 +34,16 @@ function App() {
   const [selectedRows, setSelectedRows] = useState([]); 
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
 
-  /* Mobile Execution States */
+  /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
   const [locInfo, setLocInfo] = useState(null);
   const [selectedLoc2nd, setSelectedLoc2nd] = useState(null);
-  const [showCompletePopup, setShowCompletePopup] = useState(false); // Kunci Mobile: Pop-up Sukses
+  const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* Print Label State */
+  /* Print States */
   const [selectedBoxPrint, setSelectedBoxPrint] = useState(null);
 
   const inputLocRef = useRef(null);
@@ -57,9 +57,9 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Otomatis (A-1 format) --- */
+  /* --- Logika Unique ID Otomatis --- */
   useEffect(() => {
-    if (newLoc.zone && newLoc.aisle) {
+    if (newLoc.id && newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
     }
   }, [newLoc.zone, newLoc.aisle]);
@@ -80,8 +80,9 @@ function App() {
     return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
   };
 
-  /* ================= 3. FETCHING (INTEGRATED) ================= */
+  /* ================= 3. FETCHING ================= */
   const fetchData = async () => {
+    if (!isLoggedIn) return;
     setLoading(true);
     try {
       const outboundMenus = ['Picking', 'Packing', 'Explorer', 'Print Label'];
@@ -100,22 +101,23 @@ function App() {
       };
 
       const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
-      const rawData = Array.isArray(res.data.data) ? res.data.data : [];
+      const rawRes = Array.isArray(res.data?.data) ? res.data.data : [];
 
       if (activeMenu === 'Print Label') {
-        const grouped = rawData.reduce((acc, curr) => {
+        const grouped = rawRes.reduce((acc, curr) => {
           if (!acc[curr.huid]) acc[curr.huid] = { ...curr, item_details: [] };
           acc[curr.huid].item_details.push({ sku: curr.product_id, name: curr.description, qty: curr.qty_packed });
           return acc;
         }, {});
         setData(Object.values(grouped));
       } else {
-        setData(rawData);
+        setData(rawRes);
       }
       
-      // Load cache inventory data
-      axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(Array.isArray(rs.data.data) ? rs.data.data : []));
-      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => window.reconCacheData = Array.isArray(rr.data.data) ? rr.data.data : []);
+      // Load snap & recon for mobile logic
+      axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
+      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => window.reconCacheData = rr.data?.data || []);
+
     } catch (e) { setData([]); }
     finally { setLoading(false); setSelectedRows([]); }
   };
@@ -141,6 +143,40 @@ function App() {
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
+  const handleSaveInput = async () => {
+    if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
+    const locU = mobLoc.trim().toUpperCase();
+    const artU = mobArt.trim().toUpperCase();
+    
+    if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
+        return showToast("BARANG SUDAH DISCAN!", "error");
+    }
+
+    if (activeMenu === '2nt Count' && selectedLoc2nd) {
+      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
+        return showToast("Validasi Gagal!", "error");
+      }
+    }
+
+    setLoading(true);
+    try {
+      await axios.post(`${API_BASE}?action=save_input`, { location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu });
+      showToast("Tersimpan!"); 
+      setMobArt(''); setMobQty(''); 
+      
+      if (activeMenu === '1st Count' && locInfo) {
+          const remain = locInfo.filter(item => !data.some(d => d.location_id === locU && d.artikel === item.artikel) && item.artikel !== artU);
+          if (remain.length === 0) {
+              setShowCompletePopup(true);
+              setMobLoc(''); setLocInfo(null);
+          }
+      }
+      fetchData(); 
+      if (inputArtRef.current) setTimeout(() => inputArtRef.current.focus(), 50);
+    } catch (e) { showToast("Gagal Simpan", "error"); }
+    finally { setLoading(false); }
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -158,43 +194,6 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleSaveInput = async () => {
-    if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
-    const locU = mobLoc.trim().toUpperCase();
-    const artU = mobArt.trim().toUpperCase();
-    
-    if (activeMenu === '1st Count') {
-        const isDuplicate = data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU);
-        if (isDuplicate) return showToast("BARANG INI SUDAH DISCAN!", "error");
-    }
-
-    if (activeMenu === '2nt Count' && selectedLoc2nd) {
-      if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return showToast("Validasi Lokasi/Barang Gagal!", "error");
-      }
-    }
-
-    setLoading(true);
-    try {
-      await axios.post(`${API_BASE}?action=save_input`, { location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu });
-      showToast("Tersimpan!"); 
-      setMobArt(''); setMobQty(''); 
-      
-      // Logika Pop-up Selesai (Pop up sakti centang hijau)
-      if (activeMenu === '1st Count' && locInfo) {
-          const remain = locInfo.filter(item => !data.some(d => d.location_id === locU && d.artikel === item.artikel) && item.artikel !== artU);
-          if (remain.length === 0) {
-              setShowCompletePopup(true);
-              setMobLoc(''); setLocInfo(null);
-          }
-      }
-      
-      fetchData(); 
-      if (inputArtRef.current) setTimeout(() => inputArtRef.current.focus(), 50);
-    } catch (e) { showToast("Gagal Simpan", "error"); }
-    finally { setLoading(false); }
-  };
-
   const handleBulkDelete = async () => {
     if (selectedRows.length === 0) return;
     if (!window.confirm(`Hapus ${selectedRows.length} item?`)) return;
@@ -206,11 +205,20 @@ function App() {
     finally { setLoading(false); }
   };
 
-  /* ================= 4. PRINT COMPONENT ================= */
+  const filteredData = (data || []).filter(item => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toLowerCase();
+    const id = String(item.id || item.location_id || item.unique_id || item.picklist_number || '').toLowerCase();
+    const art = String(item.artikel || item.product_id || '').toLowerCase();
+    return id.includes(s) || art.includes(s) || getDesc(item).toLowerCase().includes(s);
+  });
+
+  /* ================= 5. PRINT COMPONENT ================= */
   const PrintLayout = ({ box }) => {
     if (!box) return null;
     const pages = [];
-    for (let i = 0; i < box.item_details.length; i += 12) pages.push(box.item_details.slice(i, i + 12));
+    const items = box.item_details || [];
+    for (let i = 0; i < items.length; i += 12) pages.push(items.slice(i, i + 12));
     return (
       <div className="print-only">
         {pages.map((pItems, idx) => (
@@ -230,7 +238,7 @@ function App() {
             </table>
             <div className="divider-line" />
             <div className="label-footer">
-               <div>Packer: {box.scanned_by}</div><div style={{textAlign:'right'}}>Qty: {box.qty_packed}</div>
+               <div>Packer: {box.scanned_by}</div><div style={{textAlign:'right'}}>Total: {box.qty_packed}</div>
                <div>Tgl: {box.scanned_at?.substring(0,10)}</div><div style={{textAlign:'right'}}>Berat: {box.weight_kg} KG</div>
             </div>
             <div className="barcode-render">
@@ -242,7 +250,7 @@ function App() {
     );
   };
 
-  /* ================= 5. RENDER UI ================= */
+  /* ================= 6. RENDER UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -259,7 +267,6 @@ function App() {
     );
   }
 
-  // --- MOBILE HOME (V5 UTUH) ---
   if (isMobile && showMobileHome) {
     const b1 = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
     const b2 = (window.reconCacheData || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
@@ -288,23 +295,10 @@ function App() {
   return (
     <div style={mainLayout}>
       <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          .print-only { display: block !important; }
-          .label-container { width: 10cm; height: 10cm; padding: 2mm; box-sizing: border-box; page-break-after: always; background: white; }
-          .unboxing-tag { background: #000; color: #fff; text-align: center; font-size: 7pt; font-weight: bold; padding: 1mm; }
-          .label-header { display: flex; justify-content: space-between; margin-top: 1mm; }
-          .divider-line { height: 1.5pt; background: #000; margin: 1mm 0; }
-          .toko-grid { display: grid; grid-template-columns: 1fr 1fr; font-size: 9pt; font-weight: bold; text-align: center; }
-          .table-print { width: 100%; border-collapse: collapse; font-size: 7pt; height: 4.8cm; }
-          .table-print th { border-bottom: 1px solid #000; text-align: left; }
-          .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-          .label-footer { display: grid; grid-template-columns: 1fr 1fr; font-size: 7pt; color: red; font-weight: bold; }
-          .barcode-render { text-align: center; margin-top: 1mm; }
-        }
+        @media print { .no-print { display: none !important; } .print-only { display: block !important; } .label-container { width: 10cm; height: 10cm; padding: 2mm; box-sizing: border-box; page-break-after: always; background: white; } .unboxing-tag { background: #000; color: #fff; text-align: center; font-size: 7pt; font-weight: bold; padding: 1mm; } .label-header { display: flex; justify-content: space-between; margin-top: 1mm; } .divider-line { height: 1.5pt; background: #000; margin: 1mm 0; } .toko-grid { display: grid; grid-template-columns: 1fr 1fr; font-size: 9pt; font-weight: bold; text-align: center; } .table-print { width: 100%; border-collapse: collapse; font-size: 7pt; height: 4.8cm; } .table-print th { border-bottom: 1px solid #000; text-align: left; } .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .label-footer { display: grid; grid-template-columns: 1fr 1fr; font-size: 7pt; color: red; font-weight: bold; } .barcode-render { text-align: center; margin-top: 1mm; } }
         .print-only { display: none; }
       `}</style>
-
+      
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
       
       {!isMobile && (
@@ -330,23 +324,35 @@ function App() {
             <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'database' && (
+            {!isMobile && (
               <>
-                <button onClick={handleBulkDelete} disabled={selectedRows.length === 0} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> DELETE</button>
-                <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
+                {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
+                  <>
+                    <button onClick={handleBulkDelete} disabled={selectedRows.length === 0} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> DELETE</button>
+                    <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
+                  </>
+                )}
+                {activeMenu === 'Snapshoot' && (
+                  <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
+                )}
+                {['1st Count', '2nt Count'].includes(activeMenu) && (
+                   <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_INVENTORY}?action=clear_${activeMenu.includes('1st')?'first':'second'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                )}
+                {activeMenu === 'Print Label' && selectedBoxPrint && (
+                  <button onClick={()=>window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
+                )}
+                <button onClick={() => {
+                  const ws = XLSX.utils.json_to_sheet(data);
+                  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
+                  XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
+                }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
               </>
-            )}
-            {!isMobile && activeMenu === 'Snapshoot' && (
-              <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
-            )}
-            {!isMobile && activeMenu === 'Print Label' && selectedBoxPrint && (
-               <button onClick={()=>window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
             )}
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
         </header>
 
-        {/* PC: MASTER LOKASI TABS (V5 Kunci) */}
+        {/* TAB MASTER LOKASI (PC ONLY) */}
         {!isMobile && activeMenu === 'Master Lokasi' && (
           <div style={{display:'flex', gap:15, marginBottom:20, borderBottom:'1px solid #eee'}}>
              <div onClick={()=>setMasterTab('grid')} style={tabItem(masterTab === 'grid')}><LayoutGrid size={14}/> ASSIGN CC</div>
@@ -354,7 +360,9 @@ function App() {
           </div>
         )}
 
-        <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Search data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+        {!(isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count')) && (
+            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+        )}
 
         {/* DYNAMIC VIEW RENDERER */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
@@ -367,43 +375,42 @@ function App() {
               ))}
            </div>
         ) : activeMenu === 'Print Label' ? (
-           <div style={{display:'flex', gap:20}}>
+           <div style={{display:'flex', gap:20, flexDirection: isMobile ? 'column':'row'}}>
               <div style={{flex:1}}>
                  <select style={mInput} onChange={e=>setSelectedBoxPrint(data.find(b=>b.huid===e.target.value))}>
                     <option value="">-- PILIH BOX/KARUNG --</option>
                     {data.map((b, i)=>(<option key={i} value={b.huid}>{b.container_number} ({b.huid})</option>))}
                  </select>
-                 {selectedBoxPrint && <div style={boxInfo}><b>HUID:</b> {selectedBoxPrint.huid}<br/><b>Items:</b> {selectedBoxPrint.item_details.length} SKU</div>}
+                 {selectedBoxPrint && <div style={boxInfo}><b>Detail:</b><br/>HUID: {selectedBoxPrint.huid}<br/>Items: {selectedBoxPrint.item_details?.length} SKU</div>}
               </div>
               <div style={{flex:1, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center'}}>
                  <div style={{transform:'scale(0.8)', border:'1px solid #ddd', background:'#fff', width:'10cm', height:'10cm'}}><PrintLayout box={selectedBoxPrint} /></div>
               </div>
            </div>
         ) : (
-           /* DEFAULT TABLE VIEW */
            (!isMobile || activeMenu === 'Reconciliation' || ['Picking','Packing','Explorer'].includes(activeMenu)) && (
              <div style={tableWrapper}>
                 <table style={tableStyle}>
-                    <thead style={{position:'sticky', top:0, background:'#fff'}}>
-                    <tr style={{background:'#fafafa'}}>
+                    <thead>
+                      <tr style={{background:'#fafafa'}}>
                         {activeMenu === 'Packing' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX NO</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME</th><th style={thStyle}>HUID</th><th style={thStyle}>CONT NO</th><th style={thStyle}>TYPE</th><th style={thStyle}>KG</th><th style={thStyle}>STATUS</th></>
+                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
                         ) : activeMenu === 'Picking' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>STATUS</th><th style={thStyle}>REASON</th></>
+                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
                         ) : activeMenu === 'Master Lokasi' ? (
                             <><th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(filteredData.map(d=>d.unique_id)) : setSelectedRows([]) } /></th><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
                         ) : (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
                         )}
-                    </tr>
+                      </tr>
                     </thead>
                     <tbody>
                     {filteredData.map((row, i)=>(
                         <tr key={i} style={{borderBottom:'1px solid #eee'}}>
                             {activeMenu === 'Packing' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.box_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.scanned_by}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdStyle}>{row.huid}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.container_type}</td><td style={tdStyle}>{row.weight_kg}</td><td style={tdStyle}>{row.status}</td></>
+                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
                             ) : activeMenu === 'Picking' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.status}</td><td style={tdStyle}>{row.inventory_reason}</td></>
+                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
                             ) : activeMenu === 'Master Lokasi' ? (
                                 <><td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row.unique_id)} onChange={() => setSelectedRows(p => p.includes(row.unique_id) ? p.filter(x => x !== row.unique_id) : [...p, row.unique_id])} /></td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
                             ) : (
@@ -417,24 +424,24 @@ function App() {
            )
         )}
 
-        {/* MOBILE: EXECUTION (V5 UTUH) */}
+        {/* MOBILE FORMS */}
         {isMobile && activeMenu === '1st Count' && (
           <div style={formWrapper}>
              {locInfo && (
                 <div style={boxInfo}>
                   <div style={boxTitle}>REF: {mobLoc}</div>
                   {locInfo.map((it, idx)=>(
-                    <div key={idx} style={{display:'flex', justifyContent:'space-between', borderBottom:'1px solid #eee', padding:'5px 0'}}>
+                    <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0'}}>
                        <div><b>{it.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(it)}</span></div>
                        {data.some(d=>d.location_id===mobLoc && d.artikel===it.artikel) && <Check size={16} color="green"/>}
                     </div>
                   ))}
                 </div>
              )}
-             <input ref={inputLocRef} value={mobLoc} style={mInput} placeholder="SCAN LOKASI" autoFocus onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8){setLocInfo(snapData.filter(d=>d.location_id===v)); inputArtRef.current?.focus();}}} />
+             <input ref={inputLocRef} value={mobLoc} style={mInput} placeholder="SCAN LOKASI" onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8){setLocInfo(snapData.filter(d=>d.location_id===v)); inputArtRef.current?.focus();}}} />
              <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="SCAN ARTIKEL" onChange={e=>{const v=e.target.value.toUpperCase(); setMobArt(v); if(v.length>=12) inputQtyRef.current?.focus();}} />
              <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
-             <button onClick={handleSaveInput} style={btnBlack}>SAVE COUNT</button>
+             <button onClick={handleSaveInput} style={btnBlack}>SAVE</button>
           </div>
         )}
 
@@ -442,41 +449,40 @@ function App() {
            <div style={{display:'flex', flexDirection:'column', gap:10}}>
               <select style={mInput} onChange={e=>{const [l,a]=e.target.value.split('|'); setSelectedLoc2nd(window.reconCacheData.find(d=>d.location_id===l && d.artikel===a)); setMobLoc(''); setMobArt('');}}>
                  <option value="">-- PILIH NEED 2ND --</option>
-                 {window.reconCacheData?.filter(d=>d.final_status==='NEED 2ND COUNT').map((t,i)=>(<option key={i} value={`${t.location_id}|${t.artikel}`}>{t.location_id} | {t.artikel}</option>))}
+                 {(window.reconCacheData || []).filter(d=>d.final_status==='NEED 2ND COUNT').map((t,i)=>(<option key={i} value={`${t.location_id}|${t.artikel}`}>{t.location_id} | {t.artikel}</option>))}
               </select>
               {selectedLoc2nd && (
                 <div style={formWrapper}>
-                   <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>{getDesc(selectedLoc2nd)}<br/>Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}</div>
-                   <input value={mobLoc} style={mInput} placeholder="VALIDASI LOKASI" onChange={e=>{setMobLoc(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.location_id) inputArtRef.current?.focus();}} />
-                   <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="VALIDASI ARTIKEL" onChange={e=>{setMobArt(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.artikel) inputQtyRef.current?.focus();}} />
+                   <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>{getDesc(selectedLoc2nd)}<br/>Snap: {selectedLoc2nd.qty_snap}</div>
+                   <input value={mobLoc} style={mInput} placeholder="LOKASI" onChange={e=>{setMobLoc(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.location_id) inputArtRef.current?.focus();}} />
+                   <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="ARTIKEL" onChange={e=>{setMobArt(e.target.value.toUpperCase()); if(e.target.value.toUpperCase()===selectedLoc2nd.artikel) inputQtyRef.current?.focus();}} />
                    <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
-                   <button onClick={handleSaveInput} disabled={mobLoc!==selectedLoc2nd.location_id} style={btnBlack}>SAVE 2ND COUNT</button>
+                   <button onClick={handleSaveInput} style={btnBlack}>SAVE 2ND</button>
                 </div>
               )}
            </div>
         )}
       </div>
 
-      {/* POPUP: COMPLETE SCAN (V5 SAKTI) */}
+      {/* POPUP SUKSES */}
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
             <div style={circleCheck}><Check size={40} color="#fff" /></div>
             <h2 style={{fontWeight:900, marginTop:20}}>LOKASI SELESAI!</h2>
-            <p>Semua barang sudah sesuai referensi.</p>
-            <button style={{...btnBlack, marginTop:20}} onClick={()=>setShowCompletePopup(false)}>LANJUT LOKASI LAIN</button>
+            <button style={{...btnBlack, marginTop:20}} onClick={()=>setShowCompletePopup(false)}>LANJUT</button>
           </div>
         </div>
       )}
 
-      {/* PRINT LAYER (UNTUK MESIN PRINT) */}
+      {/* PRINT LAYER */}
       <PrintLayout box={selectedBoxPrint} />
 
       {/* POPUP ADD NEW */}
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW LOCATION</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
             <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
             <div style={{display:'flex', gap:10}}>
               <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
@@ -490,9 +496,9 @@ function App() {
             </select>
             <button onClick={async () => {
               try {
-                await axios.post(`${API_BASE}?action=add_location`, { ...newLoc, location_id: newLoc.id.toUpperCase() });
+                await axios.post(`${API_INVENTORY}?action=add_location`, { location_id: newLoc.id.toUpperCase(), zone: newLoc.zone, aisle: newLoc.aisle, unique_id: newLoc.unique, assign: newLoc.assign });
                 showToast("Berhasil!"); setShowAddForm(false); fetchData();
-              } catch (e) { showToast("Gagal Simpan", "error"); }
+              } catch (e) { showToast("Error!", "error"); }
             }} style={{...btnBlack, marginTop:10}}>SAVE</button>
           </div>
         </div>
@@ -501,11 +507,11 @@ function App() {
   );
 }
 
-/* ================= STYLES (UTUH & LENGKAP) ================= */
+/* ================= STYLES ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const searchContainer = { position: 'relative', marginBottom: '15px' };
-const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
+const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
@@ -513,8 +519,8 @@ const headerStyle = { display: 'flex', justifyContent: 'space-between', alignIte
 const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center' });
 const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
-const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
-const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
+const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase' };
+const tdStyle = { padding: '10px', fontSize: '0.65rem' };
 const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
@@ -535,11 +541,9 @@ const formWrapper = { border: '1px solid #eee', padding: '15px', borderRadius: '
 const boxInfo = { background: '#f0f7ff', padding: '10px', marginBottom: '10px', borderRadius: '6px', fontSize: '0.65rem', border: '1px solid #cce5ff' };
 const boxInfoYellow = { ...boxInfo, background: '#fffbeb', border: '1px solid #fde68a' };
 const boxTitle = { fontWeight: '900', fontSize: '0.55rem', marginBottom: '5px', color: '#1e40af' };
-const infoLine = { borderBottom: '1px solid #e2e8f0', padding: '5px 0' };
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (t) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: t === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
-const statusBadge = (s) => ({ padding: '2px 8px', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 800, background: s?.includes('Packed') ? '#dcfce7' : '#fef9c3', color: s?.includes('Packed') ? '#166534' : '#854d0e' });
 const circleCheck = { width: 60, height: 60, borderRadius: 30, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' };
 const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
 
