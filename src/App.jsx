@@ -14,7 +14,7 @@ const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
 function App() {
-  /* ================= 1. STATE (TOTAL RECOVERY - vcekpoint1) ================= */
+  /* ================= 1. STATE (TOTAL vcekpoint1) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -29,11 +29,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [showMobileHome, setShowMobileHome] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
   const [selectedRows, setSelectedRows] = useState([]); 
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
 
-  /* Mobile States (vcekpoint1 Logic) */
+  /* Mobile States (Validasi & Popup) */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -42,7 +41,7 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* Print Label States (Backend Integrated) */
+  /* Print Label States (Backend Integration) */
   const [selectedPcb, setSelectedPcb] = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions] = useState([]);
@@ -50,15 +49,15 @@ function App() {
   const inputLocRef = useRef(null);
   const inputArtRef = useRef(null);
   const inputQtyRef = useRef(null);
-
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Otomatis --- */
+  /* --- Logika Unique ID Master Lokasi --- */
   useEffect(() => {
     if (newLoc.id && newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
@@ -81,16 +80,18 @@ function App() {
     return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
   };
 
-  /* ================= 3. FETCHING (vcekpoint1 + OUTBOUND) ================= */
+  /* ================= 3. FETCHING (vcekpoint1 + BACKEND PRINT) ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
     try {
       if (activeMenu === 'Print Label') {
+        // Hanya tarik list PCB unik untuk dropdown
         const res = await axios.get(`${API_OUTBOUND}?target=packing_transactions`);
         setData(res.data?.data || []);
       } else {
         const outboundMenus = ['Picking', 'Packing', 'Explorer'];
+        const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
         const targetMap = {
           'Master Lokasi': masterTab === 'database' ? 'master_all' : 'master',
           'Snapshoot': 'snapshot_list',
@@ -101,12 +102,11 @@ function App() {
           'Packing': 'packing_transactions',
           'Explorer': 'outbound_explorer'
         };
-        const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
         const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
         setData(res.data?.data || []);
       }
       
-      // Load background caches
+      // Sync Background untuk logic mobile validasi
       axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
       axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => setReconCache(rr.data?.data || []));
     } catch (e) { setData([]); }
@@ -119,13 +119,14 @@ function App() {
     if (!pcb) return;
     setLoading(true);
     try {
+      // Menembak endpoint backend baru (action=get_print_data)
       const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
       setBoxOptions(res.data?.data || []);
-    } catch (e) { showToast("Gagal tarik detail box", "error"); }
+    } catch (e) { showToast("Gagal tarik box detail", "error"); }
     finally { setLoading(false); }
   };
 
-  /* ================= 4. HANDLERS (TOTAL LOGIC) ================= */
+  /* ================= 4. HANDLERS (vcekpoint1 FULL LOGIC) ================= */
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
@@ -140,7 +141,7 @@ function App() {
     const nextStatus = currentStatus === 'open' ? 'closed' : 'open';
     try {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
-      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
+      fetchData();
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
@@ -148,18 +149,28 @@ function App() {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
+    
+    // Anti-double scan (1st Count)
     if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
         return showToast("SUDAH DISCAN!", "error");
     }
+
+    // Validasi 2nd Count
     if (activeMenu === '2nt Count' && selectedLoc2nd) {
       if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
-        return showToast("Validasi Gagal!", "error");
+        return showToast("Validasi Lokasi/Art Gagal!", "error");
       }
     }
+
     setLoading(true);
     try {
-      await axios.post(`${API_BASE}?action=save_input`, { location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu });
+      await axios.post(`${API_BASE}?action=save_input`, { 
+        location_id: locU, artikel: artU, qty: parseInt(mobQty), 
+        operator: user?.username, target_table: activeMenu 
+      });
       showToast("Tersimpan!"); setMobArt(''); setMobQty(''); 
+      
+      // Popup Centang Hijau Selesai
       if (activeMenu === '1st Count' && locInfo) {
           const remain = locInfo.filter(item => !data.some(d => d.location_id === locU && d.artikel === item.artikel) && item.artikel !== artU);
           if (remain.length === 0) { setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); }
@@ -181,6 +192,13 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const handlePcbChange = (e) => {
+    const val = e.target.value;
+    setSelectedPcb(val);
+    fetchBoxByPcb(val);
+    setSelectedBoxHuid('');
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -198,18 +216,13 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handlePcbChange = (e) => {
-    setSelectedPcb(e.target.value);
-    fetchBoxByPcb(e.target.value);
-    setSelectedBoxHuid('');
-  };
-
-  /* ================= 5. COMPONENTS (PRINT & UI) ================= */
+  /* ================= 5. COMPONENTS (PRINT & UI LOGIC) ================= */
   const currentBoxData = useMemo(() => {
     return boxOptions.find(b => b.huid === selectedBoxHuid) || null;
   }, [selectedBoxHuid, boxOptions]);
 
-  const PrintContent = ({ box }) => {
+  // KOMPONEN RENDER LABEL (Auto-Pecah 12 Line)
+  const RenderLabel = ({ box }) => {
     if (!box) return null;
     const pages = [];
     const items = box.item_details || [];
@@ -222,20 +235,42 @@ function App() {
             <div className="u-banner">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
             <div className="l-header">
                <div><div className="l-pt-name">PT DUA PULUH TIGA</div><div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div></div>
-               <div style={{textAlign:'right'}}><QRCode value={box.huid || ''} size={42}/><div style={{fontSize:'6pt'}}>{box.huid}</div></div>
+               <div style={{textAlign:'right'}}>
+                  <div className="l-huid">HUID: <b>{box.huid}</b></div>
+                  <QRCode value={box.huid || ''} size={42}/>
+                  <div style={{fontSize:'6pt'}}>{box.huid}</div>
+               </div>
             </div>
             <div className="l-line" />
-            <div className="l-grid"><div>{box.picklist_number}</div><div>{box.nama_toko}</div><div>{box.alamat_toko || '-'}</div></div>
+            <div className="l-grid">
+               <div>{box.picklist_number}</div>
+               <div>{box.nama_toko || '-'}</div>
+               <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
+            </div>
             <div className="l-line" />
-            <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT <span style={{float:'right'}}>BOX {box.container_number} ({idx+1}/{pages.length})</span></div>
+            <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length})</div>
             <table className="l-table">
                <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
-               <tbody>{pItems.map((it, k) => (<tr key={k}><td>{it.sku}</td><td className="trunc-cell">{it.nama_item}</td><td style={{textAlign:'center'}}>{it.qty}</td></tr>))}</tbody>
+               <tbody>
+                  {pItems.map((it, k) => (
+                    <tr key={k}>
+                      <td>{it.sku}</td>
+                      <td className="trunc-cell">{it.nama_item}</td>
+                      <td style={{textAlign:'center'}}>{it.qty}</td>
+                    </tr>
+                  ))}
+               </tbody>
             </table>
             <div className="l-line" style={{marginTop:'auto'}} />
             <div className="l-footer">
-               <div className="l-row"><span><span className="l-red">Packer :</span> <b>{box.packer_name}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box} PCS</b></span></div>
-               <div className="l-row"><span><span className="l-red">Tgl :</span> <b>{box.tanggal_packing?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
+               <div className="l-row">
+                  <span><span className="l-red">Packer:</span> <b>{box.packer_name}</b></span>
+                  <span><span className="l-red">Total:</span> <b>{box.total_pcs_box} PCS</b></span>
+               </div>
+               <div className="l-row">
+                  <span><span className="l-red">Tgl:</span> <b>{box.tanggal_packing?.substring(0,10)}</b></span>
+                  <span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span>
+               </div>
             </div>
             <div className="l-barcode">
                 <div style={{fontWeight:900, fontSize:'9pt'}}>NO SJ : {box.no_sj}</div>
@@ -247,10 +282,11 @@ function App() {
     );
   };
 
-  /* ================= 6. RENDER MAIN UI ================= */
+  /* ================= 6. RENDER UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
+        {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
         <div style={loginCard}>
           <div style={loginHeader}><h2>COOL SYSTEM</h2><p>LOGISTICS MANAGEMENT</p></div>
           <div style={{padding:'30px'}}>
@@ -263,6 +299,7 @@ function App() {
     );
   }
 
+  // --- MOBILE HOME ---
   if (isMobile && showMobileHome) {
     const b1 = (reconCache || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
     const b2 = (reconCache || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
@@ -290,10 +327,8 @@ function App() {
 
   const filteredData = (data || []).filter(item => {
     if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    const id = String(item.id || item.location_id || item.unique_id || item.picklist_number || '').toLowerCase();
-    const art = String(item.artikel || item.product_id || '').toLowerCase();
-    return id.includes(s) || art.includes(s) || getDesc(item).toLowerCase().includes(s);
+    const s = searchTerm.toUpperCase();
+    return String(item.location_id || item.picklist_number || '').includes(s) || String(item.artikel || '').includes(s);
   });
 
   return (
@@ -307,9 +342,10 @@ function App() {
           .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
           .l-pt-addr { font-size: 8pt; line-height: 1.1; }
+          .l-huid { font-size: 9pt; margin-bottom: 2px; }
           .l-line { height: 2px; background: #000; margin: 1mm 0; }
           .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
           .l-grid div:last-child { border-right: none; }
           .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
           .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
@@ -323,8 +359,7 @@ function App() {
         .print-area { display: none; }
       `}</style>
       
-      {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
-      
+      {/* SIDEBAR PC */}
       {!isMobile && (
         <nav style={sidebarStyle()} className="no-print">
           <div style={{ padding: 20, fontWeight: 900 }}>COOL SYSTEM</div>
@@ -348,9 +383,13 @@ function App() {
         </nav>
       )}
 
+      {/* CONTENT AREA */}
       <div style={contentArea(isMobile)} className="no-print">
         <header style={headerStyle}>
-          <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {isMobile && <button onClick={() => setShowMobileHome(true)} style={btnIcon}><ChevronLeft size={18}/></button>}
+            <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
+          </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {!isMobile && (
               <>
@@ -363,8 +402,8 @@ function App() {
                 {activeMenu === 'Snapshoot' && (
                    <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
                 )}
-                {['1st Count', '2nt Count', 'Snapshoot'].includes(activeMenu) && (
-                   <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':'snap'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
+                   <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
                 )}
                 {activeMenu === 'Print Label' && selectedBoxHuid && (
                   <button onClick={() => window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
@@ -388,9 +427,10 @@ function App() {
         )}
 
         {!(isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count')) && (
-            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
+        {/* --- DYNAMIC RENDERER --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
            <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
@@ -417,7 +457,7 @@ function App() {
               </div>
               <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}}>
                  <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}}>
-                    <PrintContent box={currentBoxData} />
+                    <RenderLabel box={currentBoxData} />
                  </div>
               </div>
            </div>
@@ -433,15 +473,9 @@ function App() {
                         {activeMenu === 'Reconciliation' ? (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                         ) : activeMenu === 'Packing' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th><th style={thStyle}>HUID</th></>
+                            <><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th></>
                         ) : activeMenu === 'Picking' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>LOC</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME (WIB)</th></>
-                        ) : activeMenu === 'Explorer' ? (
-                            <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
-                        ) : activeMenu === '2nt Count' ? (
-                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY INPUT</th><th style={thStyle}>OPERATOR</th></>
-                        ) : activeMenu === 'Master Lokasi' ? (
-                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                            <><th style={thStyle}>PICKLIST</th><th style={thStyle}>LOC</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th></>
                         ) : (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
                         )}
@@ -455,18 +489,8 @@ function App() {
                             )}
                             {activeMenu === 'Reconciliation' ? (
                                 <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row.qty_2nd||row.qty_1st||0) - Number(row.qty_snap||0))}</td><td style={tdStyle}>{row.final_status}</td></>
-                            ) : activeMenu === 'Packing' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdStyle}>{row.huid}</td></>
-                            ) : activeMenu === 'Picking' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
-                            ) : activeMenu === 'Explorer' ? (
-                                <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdStyle}>{row.qty_req}</td><td style={tdStyle}>{row.qty_picked}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.status}</td></>
-                            ) : activeMenu === '2nt Count' ? (
-                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty}</td><td style={tdStyle}>{row.operator}</td></>
-                            ) : activeMenu === 'Master Lokasi' ? (
-                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
                             ) : (
-                                <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                                <><td style={tdStyle}>{row.location_id || row.unique_id || row.container_number}</td><td style={tdStyle}>{row.artikel || row.product_id}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_packed || row.qty_actual}</td><td style={tdStyle}>{activeMenu.includes('Picking') || activeMenu.includes('Packing') ? formatWIB(row.scanned_at) : getDesc(row)}</td></>
                             )}
                         </tr>
                     ))}
@@ -476,15 +500,16 @@ function App() {
            )
         )}
 
+        {/* MOBILE FORMS (vcekpoint1) */}
         {isMobile && activeMenu === '1st Count' && (
           <div style={formWrapper}>
              {locInfo && (
                 <div style={boxInfo}>
-                  <div style={boxTitle}>REFERENSI LOKASI: {mobLoc}</div>
+                  <div style={boxTitle}>REFERENSI: {mobLoc}</div>
                   {locInfo.map((it, idx)=>(
                     <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #eee'}}>
                        <div><b>{it.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(it)}</span></div>
-                       {reconCache.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel && d.qty_1st > 0) && <Check size={16} color="green"/>}
+                       {reconCache.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel && (d.qty_1st > 0 || d.qty_2nd > 0)) && <Check size={16} color="green"/>}
                     </div>
                   ))}
                 </div>
@@ -495,7 +520,7 @@ function App() {
              <input ref={inputArtRef} value={mobArt} style={mInput} onChange={e=>{const v=e.target.value.toUpperCase(); setMobArt(v); if(v.length>=12) inputQtyRef.current?.focus();}} />
              <label style={labelStyle}>QTY</label>
              <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
-             <button onClick={handleSaveInput} style={btnBlack}>SIMPAN DATA</button>
+             <button onClick={handleSaveInput} style={btnBlack}>SIMPAN 1ST COUNT</button>
           </div>
         )}
 
@@ -523,13 +548,13 @@ function App() {
       </div>
 
       <div className="print-area">
-         <PrintContent box={currentBoxData} />
+         <RenderLabel box={currentBoxData} />
       </div>
 
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
-            <div style={circleCheck}><Check size={40} color="#fff" /></div>
+            <div className="circle-check-v20"><Check size={40} color="#fff" /></div>
             <h2 style={{fontWeight:900, marginTop:20}}>LOKASI SELESAI!</h2>
             <button style={{...btnBlack, marginTop:20}} onClick={()=>setShowCompletePopup(false)}>LANJUT</button>
           </div>
@@ -542,8 +567,8 @@ function App() {
             <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
             <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
             <div style={{display:'flex', gap:10}}>
-              <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
-              <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
+               <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
+               <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
             </div>
             <label style={labelStyle}>UNIQUE ID</label><input style={{...mInput, background:'#f5f5f5'}} value={newLoc.unique} readOnly />
             <label style={labelStyle}>STATUS</label>
@@ -564,7 +589,7 @@ function App() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLES (TOTAL RECOVERY) ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
@@ -575,14 +600,13 @@ const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY:
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
 const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
-const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
-const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
+const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', boxSizing: 'border-box', fontFamily: 'Lexend' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
-const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
+const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
 const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
@@ -606,5 +630,7 @@ const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', f
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
+const searchContainer = { position: 'relative', marginBottom: '15px' };
+const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 
 export default App;
