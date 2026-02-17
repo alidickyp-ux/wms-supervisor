@@ -14,7 +14,7 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (OUTSIDE) ================= */
+/* ================= 1. PRINT COMPONENT (DITARUH DI LUAR AGAR ANTI-BLANK) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box) return null;
   const pages = [];
@@ -30,25 +30,26 @@ const RenderLabelComponent = ({ box }) => {
              <div><div className="l-pt-name">PT DUA PULUH TIGA</div><div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div></div>
              <div style={{textAlign:'right'}}>
                 <div className="l-huid">HUID: <b>{box.huid}</b></div>
-                <QRCode value={box.huid || ''} size={42}/><div style={{fontSize:'6pt'}}>{box.huid}</div>
+                <QRCode value={box.huid || ''} size={42}/>
+                <div style={{fontSize:'6pt'}}>{box.huid}</div>
              </div>
           </div>
           <div className="l-line" />
           <div className="l-grid">
-            <div>{box.picklist_number}</div>
-            <div>{box.nama_toko}</div>
-            <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
+             <div>{box.picklist_number}</div>
+             <div>{box.nama_toko}</div>
+             <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
           <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
           <table className="l-table">
              <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
-             <tbody>{pItems.map((it, k) => (<tr key={k}><td>{it.sku}</td><td className="trunc-cell">{it.nama_item}</td><td style={{textAlign:'center'}}>{it.qty}</td></tr>))}</tbody>
+             <tbody>{pItems.map((it, k) => (<tr key={k}><td>{it?.sku}</td><td className="trunc-cell">{it?.nama_item || it?.name}</td><td style={{textAlign:'center'}}>{it?.qty}</td></tr>))}</tbody>
           </table>
           <div className="l-line" style={{marginTop:'auto'}} />
           <div className="l-footer" style={{fontSize:'8.5pt', padding:'4px'}}>
-             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Packer:</span> <b>{box.packer_name}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box} PCS</b></span></div>
-             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Tgl:</span> <b>{box.tanggal_packing?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
+             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Packer:</span> <b>{box.packer_name || box.scanned_by}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box || box.qty_packed} PCS</b></span></div>
+             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Tgl:</span> <b>{(box.tanggal_packing || box.scanned_at)?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
           </div>
           <div className="l-barcode">
               <div style={{fontWeight:900, fontSize:'9pt'}}>NO SJ : {box.no_sj}</div>
@@ -61,7 +62,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (vcekpoint1 ORIGINAL) ================= */
+  /* ================= 2. STATE (RECOVERY vcekpoint1) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -122,7 +123,10 @@ function App() {
 
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-') return '-';
-    return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    try {
+        const d = new Date(dateStr);
+        return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    } catch (e) { return dateStr; }
   };
 
   /* ================= 4. FETCHING ================= */
@@ -163,7 +167,7 @@ function App() {
     try {
       const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
       setBoxOptions(res.data?.data || []);
-    } catch (e) { showToast("Gagal tarik box detail", "error"); }
+    } catch (e) { showToast("Gagal tarik box", "error"); }
     finally { setLoading(false); }
   };
 
@@ -184,6 +188,13 @@ function App() {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
       fetchData();
     } catch (e) { showToast("Gagal Toggle", "error"); }
+  };
+
+  const handlePcbChange = (e) => {
+    const val = e.target.value;
+    setSelectedPcb(val);
+    fetchBoxByPcb(val);
+    setSelectedBoxHuid('');
   };
 
   const handleSaveInput = async () => {
@@ -216,13 +227,6 @@ function App() {
       showToast("Berhasil Dihapus"); fetchData();
     } catch (e) { showToast("Gagal Hapus", "error"); }
     finally { setLoading(false); }
-  };
-
-  const handlePcbChange = (e) => {
-    const val = e.target.value;
-    setSelectedPcb(val);
-    fetchBoxByPcb(val);
-    setSelectedBoxHuid('');
   };
 
   const handleFileUpload = (e) => {
@@ -300,24 +304,30 @@ function App() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          .print-area { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
+          .print-area-thermal { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
           .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
-          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8.5pt; font-weight: bold; padding: 4px; border-radius: 2px; }
+          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; border-radius: 2px; }
           .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
-          .l-pt-addr { font-size: 8pt; line-height: 1.1; }
-          .l-line { height: 2px; background: #000; margin: 1mm 0; }
-          .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
-          .l-grid div:last-child { border-right: none; }
-          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
-          .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
-          .l-table td { padding: 2px; border: 0.5px solid #ccc; }
+          .l-pt-addr { font-size: 7pt; line-height: 1.1; }
+          .huid-txt { font-size: 9pt; margin-bottom: 2px; text-align: right; }
+          .black-line { height: 2px; background: #000; margin: 1mm 0; }
+          .store-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
+          .grid-cell { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .grid-cell:last-child { border-right: none; }
+          .box-content-title { font-weight: bold; font-size: 9pt; padding: 2px; }
+          .label-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+          .label-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
+          .label-table td { padding: 2px; border: 0.5px solid #ccc; }
           .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-          .l-red { color: #FF0000; font-weight: bold; }
-          .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
+          .footer-row { display: flex; justify-content: space-between; font-size: 8pt; margin-bottom: 1px; }
+          .red-bold { color: #FF0000; font-weight: bold; }
+          .barcode-sj { text-align: center; margin-top: auto; padding-bottom: 1mm; }
+          .sj-label { font-weight: bold; font-size: 10pt; }
         }
-        .print-area { display: none; }
+        .print-area-thermal { display: none; }
+        .preview-wrap-thermal .label-10x10 { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.85); transform-origin: top center; }
+        .preview-wrap-thermal .banner-unboxing { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
       `}</style>
       
       {!isMobile && (
@@ -383,6 +393,7 @@ function App() {
             <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
+        {/* --- MAIN CONTENT RENDERER --- */}
         {activeMenu === 'Print Label' ? (
            <div style={{display:'flex', gap:20, flexDirection: isMobile ? 'column':'row'}}>
               <div style={{flex:1}}>
@@ -396,10 +407,10 @@ function App() {
                     <option value="">-- PILIH BOX --</option>
                     {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
                  </select>
-                 {currentBoxData && <div style={boxInfo}><b>HUID:</b> {currentBoxData.huid}<br/><b>Items:</b> {currentBoxData.item_details?.length} SKU</div>}
+                 {currentBoxData && <div style={boxInfo}><b>HUID:</b> {currentBoxData?.huid}<br/><b>Items:</b> {currentBoxData?.item_details?.length} SKU</div>}
               </div>
               <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}}>
-                 <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}}>
+                 <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}} className="preview-wrap-thermal">
                     <RenderLabelComponent box={currentBoxData} />
                  </div>
               </div>
@@ -412,27 +423,21 @@ function App() {
                       {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
                         <th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(data.map(d=>d.unique_id)) : setSelectedRows([]) } /></th>
                       )}
-                      
                       {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
                         <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
                       )}
-
                       {activeMenu === 'Reconciliation' && (
                         <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                       )}
-
                       {activeMenu === 'Picking' && (
                         <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>PICKER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>STATUS</th><th style={thStyle}>REASON</th></>
                       )}
-
                       {activeMenu === 'Packing' && (
                         <><th style={thStyle}>ID</th><th style={thStyle}>BOX #</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>PACKER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>HUID</th><th style={thStyle}>CONT #</th><th style={thStyle}>TYPE</th><th style={thStyle}>WEIGHT</th><th style={thStyle}>STATUS</th></>
                       )}
-
                       {activeMenu === 'Explorer' && (
                         <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
                       )}
-
                       {['Snapshoot', '1st Count', '2nt Count'].includes(activeMenu) && (
                         <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
                       )}
@@ -444,32 +449,23 @@ function App() {
                         {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
                           <>
                             <td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row.unique_id)} onChange={() => setSelectedRows(p => p.includes(row.unique_id) ? p.filter(x => x !== row.unique_id) : [...p, row.unique_id])} /></td>
-                            <td style={tdStyle}>{row.location_id}</td>
-                            <td style={tdStyle}>{row.zone}</td>
-                            <td style={tdStyle}>{row.aisle}</td>
-                            <td style={tdStyle}>{row.unique_id}</td>
-                            <td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td>
+                            <td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td>
                           </>
                         )}
-
                         {activeMenu === 'Reconciliation' && (
-                          <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row.qty_2nd||row.qty_1st||0) - Number(row.qty_snap||0))}</td><td style={tdStyle}>{row.final_status}</td></>
+                          <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdStyle}>{row?.qty_1st}</td><td style={tdStyle}>{row?.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row?.qty_2nd||row?.qty_1st||0) - Number(row?.qty_snap||0))}</td><td style={tdStyle}>{row?.final_status}</td></>
                         )}
-
                         {activeMenu === 'Picking' && (
-                          <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.status}</td><td style={tdStyle}>{row.inventory_reason}</td></>
+                          <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.qty_actual}</td><td style={tdStyle}>{row?.picker_name}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.status}</td><td style={tdStyle}>{row?.inventory_reason}</td></>
                         )}
-
                         {activeMenu === 'Packing' && (
-                          <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.box_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.scanned_by}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.huid}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.container_type}</td><td style={tdStyle}>{row.weight_kg}</td><td style={tdStyle}>{row.status}</td></>
+                          <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.container_number}</td><td style={tdStyle}>{row?.container_type}</td><td style={tdStyle}>{row?.weight_kg}</td><td style={tdStyle}>{row?.status}</td></>
                         )}
-
                         {activeMenu === 'Explorer' && (
-                          <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row.qty_req}</td><td style={tdStyle}>{row.qty_picked}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.status}</td></>
+                          <><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
                         )}
-
                         {['Snapshoot', '1st Count', '2nt Count'].includes(activeMenu) && (
-                          <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                          <><td style={tdStyle}>{row?.location_id || row?.unique_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap || row?.qty_1st || row?.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                         )}
                      </tr>
                    ))}
@@ -479,14 +475,15 @@ function App() {
         )}
       </div>
 
-      <div className="print-area">
+      {/* --- AREA PRINT (ISOLATED) --- */}
+      <div className="print-area-thermal">
          <RenderLabelComponent box={currentBoxData} />
       </div>
 
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
-            <div className="circle-check-v20" style={{background:'#16a34a', borderRadius:'50%', width:60, height:60, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto'}}><Check size={40} color="#fff" /></div>
+            <div style={{background:'#16a34a', borderRadius:'50%', width:60, height:60, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto'}}><Check size={40} color="#fff" /></div>
             <h2 style={{fontWeight:900, marginTop:20}}>LOKASI SELESAI!</h2>
             <button style={{...btnBlack, marginTop:20}} onClick={()=>setShowCompletePopup(false)}>LANJUT</button>
           </div>
@@ -496,7 +493,7 @@ function App() {
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW LOKASI</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
             <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
             <div style={{display:'flex', gap:10}}>
                <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
@@ -520,8 +517,6 @@ function App() {
     </div>
   );
 }
-
-export default App;
 
 /* ================= STYLES ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
@@ -563,5 +558,8 @@ const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(aut
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
+const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
+
+export default App;
