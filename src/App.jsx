@@ -5,9 +5,8 @@ import Barcode from 'react-barcode';
 import QRCode from 'react-qr-code';   
 import {
   RefreshCw, FileSpreadsheet, Trash2, LogOut, Upload, Search,
-  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download,
-  CheckCircle2, Loader2, Check, Plus, Database as DbIcon, LayoutGrid, X,
-  Truck, Package, Globe, Printer
+  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Check, Plus, 
+  Database as DbIcon, LayoutGrid, X, Truck, Package, Globe, Printer, Loader2
 } from 'lucide-react';
 
 /* --- API ENDPOINTS --- */
@@ -15,7 +14,7 @@ const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
 function App() {
-  /* ================= 1. STATE (TOTAL RECOVERY - V14 BASED) ================= */
+  /* ================= 1. STATE (TOTAL RECOVERY - vcekpoint1) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -24,8 +23,6 @@ function App() {
   
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [masterTab, setMasterTab] = useState('grid'); 
-  const [showAddForm, setShowAddForm] = useState(false);
-  
   const [data, setData] = useState([]);
   const [snapData, setSnapData] = useState([]);
   const [reconCache, setReconCache] = useState([]); 
@@ -36,7 +33,7 @@ function App() {
   const [selectedRows, setSelectedRows] = useState([]); 
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
 
-  /* Mobile States (V14 Logic) */
+  /* Mobile States (vcekpoint1 Logic) */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -45,7 +42,7 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* Print Label States (V19 Logic) */
+  /* Print Label States (Backend Integrated) */
   const [selectedPcb, setSelectedPcb] = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions] = useState([]);
@@ -61,7 +58,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Otomatis (Master Lokasi) --- */
+  /* --- Logika Unique ID Otomatis --- */
   useEffect(() => {
     if (newLoc.id && newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
@@ -84,50 +81,51 @@ function App() {
     return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
   };
 
-  /* ================= 3. FETCHING (V14 LOGIC + OUTBOUND) ================= */
+  /* ================= 3. FETCHING (vcekpoint1 + OUTBOUND) ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
     try {
-      const outboundMenus = ['Picking', 'Packing', 'Explorer', 'Print Label'];
-      const targetMap = {
-        'Master Lokasi': masterTab === 'database' ? 'master_all' : 'master',
-        'Snapshoot': 'snapshot_list',
-        '1st Count': 'first', 
-        '2nt Count': 'second', 
-        'Reconciliation': 'recon',
-        'Picking': 'picking_transactions',
-        'Packing': 'packing_transactions',
-        'Explorer': 'outbound_explorer',
-        'Print Label': 'packing_transactions'
-      };
-
-      const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
-      const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
-      const rawRes = res.data?.data || [];
-
       if (activeMenu === 'Print Label') {
-        const grouped = rawRes.reduce((acc, curr) => {
-          if (!acc[curr.huid]) acc[curr.huid] = { ...curr, item_details: [] };
-          acc[curr.huid].item_details.push({ sku: curr.product_id, name: curr.description, qty: curr.qty_packed });
-          return acc;
-        }, {});
-        setData(Object.values(grouped));
+        const res = await axios.get(`${API_OUTBOUND}?target=packing_transactions`);
+        setData(res.data?.data || []);
       } else {
-        setData(rawRes);
+        const outboundMenus = ['Picking', 'Packing', 'Explorer'];
+        const targetMap = {
+          'Master Lokasi': masterTab === 'database' ? 'master_all' : 'master',
+          'Snapshoot': 'snapshot_list',
+          '1st Count': 'first', 
+          '2nt Count': 'second', 
+          'Reconciliation': 'recon',
+          'Picking': 'picking_transactions',
+          'Packing': 'packing_transactions',
+          'Explorer': 'outbound_explorer'
+        };
+        const currentAPI = outboundMenus.includes(activeMenu) ? API_OUTBOUND : API_BASE;
+        const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
+        setData(res.data?.data || []);
       }
       
-      // Cache Background untuk logic mobile
+      // Load background caches
       axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
       axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => setReconCache(rr.data?.data || []));
-
     } catch (e) { setData([]); }
     finally { setLoading(false); setSelectedRows([]); }
   };
 
   useEffect(() => { fetchData(); }, [activeMenu, masterTab, isLoggedIn]);
 
-  /* ================= 4. HANDLERS (V14 FULL LOGIC) ================= */
+  const fetchBoxByPcb = async (pcb) => {
+    if (!pcb) return;
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
+      setBoxOptions(res.data?.data || []);
+    } catch (e) { showToast("Gagal tarik detail box", "error"); }
+    finally { setLoading(false); }
+  };
+
+  /* ================= 4. HANDLERS (TOTAL LOGIC) ================= */
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
@@ -150,22 +148,18 @@ function App() {
     if (!mobLoc || !mobQty || !mobArt) return showToast("Data Kurang", "error");
     const locU = mobLoc.trim().toUpperCase();
     const artU = mobArt.trim().toUpperCase();
-    
     if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
         return showToast("SUDAH DISCAN!", "error");
     }
-
     if (activeMenu === '2nt Count' && selectedLoc2nd) {
       if (locU !== selectedLoc2nd.location_id.toUpperCase() || artU !== selectedLoc2nd.artikel.toUpperCase()) {
         return showToast("Validasi Gagal!", "error");
       }
     }
-
     setLoading(true);
     try {
       await axios.post(`${API_BASE}?action=save_input`, { location_id: locU, artikel: artU, qty: parseInt(mobQty), operator: user?.username, target_table: activeMenu });
       showToast("Tersimpan!"); setMobArt(''); setMobQty(''); 
-      
       if (activeMenu === '1st Count' && locInfo) {
           const remain = locInfo.filter(item => !data.some(d => d.location_id === locU && d.artikel === item.artikel) && item.artikel !== artU);
           if (remain.length === 0) { setShowCompletePopup(true); setMobLoc(''); setLocInfo(null); }
@@ -187,13 +181,6 @@ function App() {
     finally { setLoading(false); }
   };
 
-  const handlePcbChange = (e) => {
-    const pcb = e.target.value;
-    setSelectedPcb(pcb);
-    setBoxOptions(data.filter(b => b.picklist_number === pcb));
-    setSelectedBoxHuid('');
-  };
-
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -211,77 +198,56 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  /* ================= 5. PRINT COMPONENTS (ISOLATED) ================= */
-  const currentPrintData = useMemo(() => {
-    return data.find(b => b.huid === selectedBoxHuid);
-  }, [selectedBoxHuid, data]);
+  const handlePcbChange = (e) => {
+    setSelectedPcb(e.target.value);
+    fetchBoxByPcb(e.target.value);
+    setSelectedBoxHuid('');
+  };
 
-  const PrintLayout = ({ box, isPreview = false }) => {
-    if (!box) return isPreview ? <div style={{padding:20, color:'#ccc'}}>Pilih PCB & Box untuk melihat preview</div> : null;
+  /* ================= 5. COMPONENTS (PRINT & UI) ================= */
+  const currentBoxData = useMemo(() => {
+    return boxOptions.find(b => b.huid === selectedBoxHuid) || null;
+  }, [selectedBoxHuid, boxOptions]);
+
+  const PrintContent = ({ box }) => {
+    if (!box) return null;
     const pages = [];
     const items = box.item_details || [];
     for (let i = 0; i < items.length; i += 12) pages.push(items.slice(i, i + 12));
 
     return (
-      <div className={isPreview ? "preview-wrap-thermal" : "print-area-thermal"}>
+      <>
         {pages.map((pItems, idx) => (
-          <div key={idx} className="label-10x10">
-            <div className="banner-unboxing">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
-            <div className="label-header">
-               <div className="pt-col">
-                  <div className="pt-name">PT DUA PULUH TIGA</div>
-                  <div className="pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div>
-               </div>
-               <div className="huid-col">
-                  <div className="huid-txt">HUID: <b>{box.huid}</b></div>
-                  <QRCode value={box.huid || ''} size={42} />
-               </div>
+          <div key={idx} className="l-page">
+            <div className="u-banner">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
+            <div className="l-header">
+               <div><div className="l-pt-name">PT DUA PULUH TIGA</div><div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div></div>
+               <div style={{textAlign:'right'}}><QRCode value={box.huid || ''} size={42}/><div style={{fontSize:'6pt'}}>{box.huid}</div></div>
             </div>
-            <div className="black-line" />
-            <div className="store-grid">
-               <div className="grid-cell"><b>{box.picklist_number}</b></div>
-               <div className="grid-cell"><b>{box.nama_toko || '-'}</b></div>
-               <div className="grid-cell"><b>{box.alamat_toko || '-'}</b></div>
-            </div>
-            <div className="black-line" />
-            <div className="box-content-title">
-               <span>BOX CONTENT</span>
-               <span style={{float:'right'}}>BOX {box.container_number} ({idx+1}/{pages.length})</span>
-            </div>
-            <table className="label-table">
+            <div className="l-line" />
+            <div className="l-grid"><div>{box.picklist_number}</div><div>{box.nama_toko}</div><div>{box.alamat_toko || '-'}</div></div>
+            <div className="l-line" />
+            <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT <span style={{float:'right'}}>BOX {box.container_number} ({idx+1}/{pages.length})</span></div>
+            <table className="l-table">
                <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
-               <tbody>
-                  {pItems.map((it, k) => (
-                    <tr key={k}>
-                      <td>{it.sku}</td>
-                      <td className="trunc">{it.name}</td>
-                      <td style={{textAlign:'center'}}>{it.qty}</td>
-                    </tr>
-                  ))}
-               </tbody>
+               <tbody>{pItems.map((it, k) => (<tr key={k}><td>{it.sku}</td><td className="trunc-cell">{it.nama_item}</td><td style={{textAlign:'center'}}>{it.qty}</td></tr>))}</tbody>
             </table>
-            <div className="black-line" style={{marginTop:'auto'}} />
-            <div className="label-footer">
-               <div className="footer-row">
-                  <span><span className="red-bold">Packer :</span> <b>{box.scanned_by}</b></span>
-                  <span><span className="red-bold">Total Qty:</span> <b>{box.qty_packed} PCS</b></span>
-               </div>
-               <div className="footer-row">
-                  <span><span className="red-bold">Tanggal :</span> <b>{box.scanned_at?.substring(0,10)}</b></span>
-                  <span><span className="red-bold">Berat :</span> <b>{box.weight_kg || '0.0'} KG</b></span>
-               </div>
+            <div className="l-line" style={{marginTop:'auto'}} />
+            <div className="l-footer">
+               <div className="l-row"><span><span className="l-red">Packer :</span> <b>{box.packer_name}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box} PCS</b></span></div>
+               <div className="l-row"><span><span className="l-red">Tgl :</span> <b>{box.tanggal_packing?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
             </div>
-            <div className="barcode-sj">
-               <div className="sj-label">NO SJ : {box.no_sj || box.picklist_number}</div>
-               <Barcode value={box.no_sj || box.picklist_number || ''} width={1.8} height={40} fontSize={0} margin={0} />
+            <div className="l-barcode">
+                <div style={{fontWeight:900, fontSize:'9pt'}}>NO SJ : {box.no_sj}</div>
+                <Barcode value={box.no_sj || box.picklist_number || ''} width={1.8} height={40} fontSize={0} margin={0} />
             </div>
           </div>
         ))}
-      </div>
+      </>
     );
   };
 
-  /* ================= 6. RENDER UI (ANTI-BLANK LOGIC) ================= */
+  /* ================= 6. RENDER MAIN UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -332,43 +298,29 @@ function App() {
 
   return (
     <div style={mainLayout}>
-      {/* CSS ISOLATION UNTUK PRINT THERMAL */}
       <style>{`
         @media print {
-          body, html { margin: 0; padding: 0; background: #fff; }
           .no-print { display: none !important; }
-          .print-area-thermal { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
-          .label-10x10 { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; display: flex; flex-direction: column; font-family: sans-serif; }
-          .banner-unboxing { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
-          .label-header { display: flex; justify-content: space-between; padding: 4px 2px; }
-          .pt-name { font-weight: 900; font-size: 13pt; }
-          .pt-addr { font-size: 7pt; line-height: 1.1; }
-          .huid-txt { font-size: 9pt; margin-bottom: 2px; text-align: right; }
-          .black-line { height: 2px; background: #000; margin: 1mm 0; }
-          .store-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .grid-cell { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; font-weight: bold; text-align: center; }
-          .grid-cell:last-child { border-right: none; }
-          .box-content-title { font-weight: bold; font-size: 9pt; padding: 2px; }
-          .label-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-          .label-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
-          .label-table td { padding: 2px; border: 0.5px solid #ccc; }
-          .trunc { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-          .footer-row { display: flex; justify-content: space-between; font-size: 8pt; margin-bottom: 1px; }
-          .red-bold { color: #FF0000; font-weight: bold; }
-          .barcode-sj { text-align: center; margin-top: auto; padding-bottom: 1mm; }
-          .sj-label { font-weight: bold; font-size: 10pt; }
+          .print-area { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
+          .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
+          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8.5pt; font-weight: bold; padding: 4px; border-radius: 2px; }
+          .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
+          .l-pt-name { font-weight: 900; font-size: 13pt; }
+          .l-pt-addr { font-size: 8pt; line-height: 1.1; }
+          .l-line { height: 2px; background: #000; margin: 1mm 0; }
+          .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
+          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .l-grid div:last-child { border-right: none; }
+          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+          .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
+          .l-table td { padding: 2px; border: 0.5px solid #ccc; }
+          .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .l-footer { padding: 2px 4px; font-size: 8.5pt; }
+          .l-row { display: flex; justify-content: space-between; }
+          .l-red { color: #FF0000; font-weight: bold; }
+          .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
         }
-        .print-area-thermal { display: none; }
-        .preview-wrap-thermal .label-10x10 { 
-          width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; 
-          box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; 
-          flex-direction: column; padding: 1mm; transform: scale(0.85); transform-origin: top center;
-        }
-        .preview-wrap-thermal .banner-unboxing { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
-        .preview-wrap-thermal .red-bold { color: #FF0000; font-weight: bold; }
-        .preview-wrap-thermal .black-line { height: 2px; background: #000; margin: 1mm 0; }
-        .preview-wrap-thermal .store-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-        .preview-wrap-thermal .grid-cell { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; text-align: center; }
+        .print-area { display: none; }
       `}</style>
       
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
@@ -398,10 +350,7 @@ function App() {
 
       <div style={contentArea(isMobile)} className="no-print">
         <header style={headerStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {isMobile && <button onClick={() => setShowMobileHome(true)} style={btnIcon}><ChevronLeft size={18}/></button>}
-            <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
-          </div>
+          <div style={{ fontWeight: '800' }}>{activeMenu.toUpperCase()}</div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {!isMobile && (
               <>
@@ -415,7 +364,7 @@ function App() {
                    <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
                 )}
                 {['1st Count', '2nt Count', 'Snapshoot'].includes(activeMenu) && (
-                   <button onClick={() => { if(window.confirm("Bersihkan data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':'snap'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                   <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':'snap'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
                 )}
                 {activeMenu === 'Print Label' && selectedBoxHuid && (
                   <button onClick={() => window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
@@ -442,7 +391,6 @@ function App() {
             <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
-        {/* --- DYNAMIC RENDERER --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
            <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
@@ -465,9 +413,12 @@ function App() {
                     <option value="">-- PILIH BOX --</option>
                     {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
                  </select>
+                 {currentBoxData && <div style={boxInfo}><b>HUID:</b> {currentBoxData.huid}<br/><b>Items:</b> {currentBoxData.item_details?.length} SKU</div>}
               </div>
               <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}}>
-                 <PrintLayout box={currentPrintData} isPreview={true} />
+                 <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}}>
+                    <PrintContent box={currentBoxData} />
+                 </div>
               </div>
            </div>
         ) : (
@@ -477,20 +428,22 @@ function App() {
                     <thead>
                       <tr style={{background:'#fafafa'}}>
                         {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
-                            <th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(filteredData.map(d=>d.unique_id)) : setSelectedRows([]) } /></th>
+                            <th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(data.map(d=>d.unique_id)) : setSelectedRows([]) } /></th>
                         )}
                         {activeMenu === 'Reconciliation' ? (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                         ) : activeMenu === 'Packing' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
+                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th><th style={thStyle}>HUID</th></>
                         ) : activeMenu === 'Picking' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>LOC</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME</th></>
+                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>LOC</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME (WIB)</th></>
                         ) : activeMenu === 'Explorer' ? (
                             <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
                         ) : activeMenu === '2nt Count' ? (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY INPUT</th><th style={thStyle}>OPERATOR</th></>
+                        ) : activeMenu === 'Master Lokasi' ? (
+                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
                         ) : (
-                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>STATUS</th></>
+                            <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
                         )}
                       </tr>
                     </thead>
@@ -503,15 +456,15 @@ function App() {
                             {activeMenu === 'Reconciliation' ? (
                                 <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row.qty_2nd||row.qty_1st||0) - Number(row.qty_snap||0))}</td><td style={tdStyle}>{row.final_status}</td></>
                             ) : activeMenu === 'Packing' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
+                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td><td style={tdStyle}>{row.huid}</td></>
                             ) : activeMenu === 'Picking' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
+                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
                             ) : activeMenu === 'Explorer' ? (
                                 <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdStyle}>{row.qty_req}</td><td style={tdStyle}>{row.qty_picked}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.status}</td></>
                             ) : activeMenu === '2nt Count' ? (
                                 <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty}</td><td style={tdStyle}>{row.operator}</td></>
                             ) : activeMenu === 'Master Lokasi' ? (
-                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
+                                <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.zone}</td><td style={tdStyle}>{row.aisle}</td><td style={tdStyle}>{row.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td></>
                             ) : (
                                 <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                             )}
@@ -523,7 +476,6 @@ function App() {
            )
         )}
 
-        {/* MOBILE FORMS (V14 UTUH) */}
         {isMobile && activeMenu === '1st Count' && (
           <div style={formWrapper}>
              {locInfo && (
@@ -532,7 +484,7 @@ function App() {
                   {locInfo.map((it, idx)=>(
                     <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #eee'}}>
                        <div><b>{it.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(it)}</span></div>
-                       {data.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel) && <Check size={16} color="green"/>}
+                       {reconCache.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel && d.qty_1st > 0) && <Check size={16} color="green"/>}
                     </div>
                   ))}
                 </div>
@@ -570,7 +522,10 @@ function App() {
         )}
       </div>
 
-      {/* POPUP SUKSES */}
+      <div className="print-area">
+         <PrintContent box={currentBoxData} />
+      </div>
+
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
           <div style={popupContent}>
@@ -581,7 +536,6 @@ function App() {
         </div>
       )}
 
-      {/* POPUP ADD NEW (V14 UTUH) */}
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
@@ -606,19 +560,13 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* --- AREA PRINT (TOTAL ISOLATION) --- */}
-      <PrintLayout box={currentPrintData} isPreview={false} />
     </div>
   );
 }
 
-/* ================= STYLES (TOTAL RECOVERY) ================= */
+/* ================= STYLES ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
-const searchContainer = { position: 'relative', marginBottom: '15px' };
-const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
-const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 180, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
@@ -634,7 +582,7 @@ const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '1
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
-const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
+const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
 const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
@@ -657,5 +605,6 @@ const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(aut
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
+const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 
 export default App;
