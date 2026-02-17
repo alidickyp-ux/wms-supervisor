@@ -5,16 +5,15 @@ import Barcode from 'react-barcode';
 import QRCode from 'react-qr-code';   
 import {
   RefreshCw, FileSpreadsheet, Trash2, LogOut, Upload, Search,
-  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download,
-  CheckCircle2, Loader2, Check, Plus, Database as DbIcon, LayoutGrid, X,
-  Truck, Package, Globe, Printer
+  ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Check, Plus, 
+  Database as DbIcon, LayoutGrid, X, Truck, Package, Globe, Printer, Loader2
 } from 'lucide-react';
 
 /* --- API ENDPOINTS --- */
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (OUTSIDE) ================= */
+/* ================= 1. PRINT COMPONENT (DITARUH DI LUAR AGAR ANTI-BLANK) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box) return null;
   const pages = [];
@@ -22,7 +21,7 @@ const RenderLabelComponent = ({ box }) => {
   for (let i = 0; i < items.length; i += 12) pages.push(items.slice(i, i + 12));
 
   return (
-    <>
+    <div className="print-area-thermal">
       {pages.map((pItems, idx) => (
         <div key={idx} className="l-page">
           <div className="u-banner">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
@@ -30,14 +29,15 @@ const RenderLabelComponent = ({ box }) => {
              <div><div className="l-pt-name">PT DUA PULUH TIGA</div><div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div></div>
              <div style={{textAlign:'right'}}>
                 <div className="l-huid">HUID: <b>{box.huid}</b></div>
-                <QRCode value={box.huid || ''} size={42}/><div style={{fontSize:'6pt'}}>{box.huid}</div>
+                <QRCode value={box.huid || ''} size={42}/>
+                <div style={{fontSize:'6pt'}}>{box.huid}</div>
              </div>
           </div>
           <div className="l-line" />
           <div className="l-grid">
-            <div>{box.picklist_number}</div>
-            <div>{box.nama_toko}</div>
-            <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
+             <div>{box.picklist_number}</div>
+             <div>{box.nama_toko || '-'}</div>
+             <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
           <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
@@ -56,12 +56,12 @@ const RenderLabelComponent = ({ box }) => {
           </div>
         </div>
       ))}
-    </>
+    </div>
   );
 };
 
 function App() {
-  /* ================= 2. STATE (vcekpoint1) ================= */
+  /* ================= 2. STATE (vcekpoint1 ORIGINAL) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -122,9 +122,7 @@ function App() {
 
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-') return '-';
-    try {
-        return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-    } catch (e) { return dateStr; }
+    return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
   };
 
   /* ================= 4. FETCHING ================= */
@@ -165,7 +163,7 @@ function App() {
     try {
       const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
       setBoxOptions(res.data?.data || []);
-    } catch (e) { showToast("Gagal tarik box", "error"); }
+    } catch (e) { showToast("Gagal tarik box detail", "error"); }
     finally { setLoading(false); }
   };
 
@@ -180,21 +178,12 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
-  // --- TOGGLE ASSIGN (Sakti - vcekpoint1) ---
   const handleToggle = async (uid, currentStatus) => {
     const nextStatus = currentStatus === 'open' ? 'closed' : 'open';
     try {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
       setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
-      showToast(`${uid} set to ${nextStatus}`);
     } catch (e) { showToast("Gagal Toggle", "error"); }
-  };
-
-  const handlePcbChange = (e) => {
-    const val = e.target.value;
-    setSelectedPcb(val);
-    fetchBoxByPcb(val);
-    setSelectedBoxHuid('');
   };
 
   const handleSaveInput = async () => {
@@ -229,6 +218,13 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const handlePcbChange = (e) => {
+    const val = e.target.value;
+    setSelectedPcb(val);
+    fetchBoxByPcb(val);
+    setSelectedBoxHuid('');
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -246,17 +242,10 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  /* ================= 6. RENDER LOGIC ================= */
+  /* ================= 6. RENDER UI ================= */
   const currentBoxData = useMemo(() => {
     return boxOptions.find(b => b.huid === selectedBoxHuid) || null;
   }, [selectedBoxHuid, boxOptions]);
-
-  const filteredData = (data || []).filter(item => {
-    if (!searchTerm) return true;
-    const s = searchTerm.toUpperCase();
-    return String(item.location_id || item.picklist_number || item.id).includes(s) || 
-           String(item.artikel || item.product_id || item.sku).includes(s);
-  });
 
   if (!isLoggedIn) {
     return (
@@ -299,27 +288,37 @@ function App() {
     );
   }
 
+  const filteredData = (data || []).filter(item => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toUpperCase();
+    return String(item.location_id || item.picklist_number || item.id || '').includes(s) || 
+           String(item.artikel || item.product_id || item.sku || '').includes(s);
+  });
+
   return (
     <div style={mainLayout}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          .print-area { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
+          .print-area-thermal { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
           .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
           .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8.5pt; font-weight: bold; padding: 4px; border-radius: 2px; }
+          .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
           .l-pt-addr { font-size: 8pt; line-height: 1.1; }
+          .l-huid { font-size: 9pt; margin-bottom: 2px; text-align: right; }
+          .l-line { height: 2px; background: #000; margin: 1mm 0; }
           .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
           .l-grid div:last-child { border-right: none; }
           .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
           .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
           .l-table td { padding: 2px; border: 0.5px solid #ccc; }
+          .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
           .l-red { color: #FF0000; font-weight: bold; }
           .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
         }
-        .print-area { display: none; }
-        .preview-wrap-thermal .label-10x10 { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.85); transform-origin: top center; }
+        .print-area-thermal { display: none; }
       `}</style>
       
       {!isMobile && (
@@ -390,11 +389,8 @@ function App() {
            <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
                 <div key={idx} style={cardGrid}>
-                  <span style={{ fontWeight: 800, marginBottom: 5 }}>{row.unique_id}</span>
-                  {/* --- SAKLAR TOGGLE ASSIGN (RESTORED) --- */}
-                  <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
-                    <div style={toggleCircle(row.assign === 'open')} />
-                  </div>
+                  <span style={{ fontWeight: 800, marginBottom: 5 }}>{row?.unique_id}</span>
+                  <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
                 </div>
               ))}
            </div>
@@ -411,10 +407,9 @@ function App() {
                     <option value="">-- PILIH BOX --</option>
                     {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
                  </select>
-                 {currentBoxData && <div style={boxInfo}><b>HUID:</b> {currentBoxData?.huid}<br/><b>Items:</b> {currentBoxData?.item_details?.length} SKU</div>}
               </div>
               <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}}>
-                 <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}} className="preview-wrap-thermal">
+                 <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}}>
                     <RenderLabelComponent box={currentBoxData} />
                  </div>
               </div>
@@ -453,7 +448,7 @@ function App() {
                         {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
                           <>
                             <td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row.unique_id)} onChange={() => setSelectedRows(p => p.includes(row.unique_id) ? p.filter(x => x !== row.unique_id) : [...p, row.unique_id])} /></td>
-                            <td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row.assign?.toUpperCase()}</td>
+                            <td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row?.assign?.toUpperCase()}</td>
                           </>
                         )}
                         {activeMenu === 'Reconciliation' && (
@@ -469,7 +464,7 @@ function App() {
                           <><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
                         )}
                         {['Snapshoot', '1st Count', '2nt Count'].includes(activeMenu) && (
-                          <><td style={tdStyle}>{row?.location_id || row?.unique_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap || row?.qty_1st || row?.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                          <><td style={tdStyle}>{row?.location_id || row?.unique_id}</td><td style={tdStyle}>{row?.artikel || row?.sku || row?.product_id}</td><td style={tdStyle}>{row?.qty_snap || row?.qty_1st || row?.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                         )}
                      </tr>
                    ))}
@@ -477,9 +472,31 @@ function App() {
              </table>
            </div>
         )}
+
+        {/* MOBILE EXECUTION */}
+        {isMobile && !showMobileHome && (activeMenu === '1st Count' || activeMenu === '2nt Count') && (
+           <div style={formWrapper}>
+              {activeMenu === '1st Count' && locInfo && (
+                <div style={boxInfo}>
+                  <div style={boxTitle}>REF: {mobLoc}</div>
+                  {locInfo.map((it, idx)=>(
+                    <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #eee'}}>
+                       <div><b>{it.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(it)}</span></div>
+                       {reconCache.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel && d.qty_1st > 0) && <Check size={16} color="green"/>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <input ref={inputLocRef} placeholder="SCAN LOKASI" style={mInput} value={mobLoc} onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8 && activeMenu==='1st Count') setLocInfo(snapData.filter(d=>String(d.location_id).toUpperCase()===v));}} />
+              <input ref={inputArtRef} placeholder="SCAN ARTIKEL" style={mInput} value={mobArt} onChange={e=>setMobArt(e.target.value.toUpperCase())} />
+              <input ref={inputQtyRef} type="number" placeholder="QTY" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
+              <button onClick={handleSaveInput} style={btnBlack}>SIMPAN DATA</button>
+           </div>
+        )}
       </div>
 
-      <div className="print-area">
+      {/* --- AREA PRINT (ISOLATED) --- */}
+      <div className="print-area-thermal">
          <RenderLabelComponent box={currentBoxData} />
       </div>
 
@@ -496,7 +513,7 @@ function App() {
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW LOKASI</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
             <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
             <div style={{display:'flex', gap:10}}>
                <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
@@ -521,9 +538,7 @@ function App() {
   );
 }
 
-export default App;
-
-/* ================= STYLES ================= */
+/* ================= STYLES (TOTAL RECOVERY) ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
@@ -541,7 +556,7 @@ const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '1
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
-const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
+const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
 const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
@@ -563,5 +578,8 @@ const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(aut
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
+const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
+
+export default App;
