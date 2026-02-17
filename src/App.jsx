@@ -13,7 +13,7 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (DITARUH DI LUAR AGAR ANTI-BLANK) ================= */
+/* ================= 1. PRINT COMPONENT (OUTSIDE TO PREVENT BLANK) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box) return null;
   const pages = [];
@@ -36,22 +36,19 @@ const RenderLabelComponent = ({ box }) => {
           <div className="l-line" />
           <div className="l-grid">
              <div>{box.picklist_number}</div>
-             <div>{box.nama_toko}</div>
+             <div>{box.nama_toko || '-'}</div>
              <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
-          <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>
-            BOX CONTENT ({idx+1}/{pages.length}) 
-            <span style={{float:'right'}}>BOX: {box.container_number}</span>
-          </div>
+          <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
           <table className="l-table">
              <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
              <tbody>{pItems.map((it, k) => (<tr key={k}><td>{it.sku}</td><td className="trunc-cell">{it.nama_item}</td><td style={{textAlign:'center'}}>{it.qty}</td></tr>))}</tbody>
           </table>
           <div className="l-line" style={{marginTop:'auto'}} />
-          <div className="l-footer" style={{fontSize:'8.5pt', padding:'4px'}}>
-             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Packer:</span> <b>{box.packer_name}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box} PCS</b></span></div>
-             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Tgl:</span> <b>{box.tanggal_packing?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
+          <div className="l-footer">
+             <div className="l-row"><span><span className="l-red">Packer:</span> <b>{box.packer_name}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box} PCS</b></span></div>
+             <div className="l-row"><span><span className="l-red">Tgl:</span> <b>{box.tanggal_packing?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
           </div>
           <div className="l-barcode">
               <div style={{fontWeight:900, fontSize:'9pt'}}>NO SJ : {box.no_sj}</div>
@@ -64,7 +61,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (TOTAL RECOVERY - vcekpoint1 BASED) ================= */
+  /* ================= 2. STATE (vcekpoint1 ORIGINAL) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -79,11 +76,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [showMobileHome, setShowMobileHome] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
   const [selectedRows, setSelectedRows] = useState([]); 
+  const [showAddForm, setShowAddForm] = useState(false);
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
 
-  /* Mobile States */
   const [mobLoc, setMobLoc] = useState('');
   const [mobArt, setMobArt] = useState('');
   const [mobQty, setMobQty] = useState('');
@@ -92,7 +88,6 @@ function App() {
   const [showCompletePopup, setShowCompletePopup] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
 
-  /* Print Label States (Backend Integration) */
   const [selectedPcb, setSelectedPcb] = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions] = useState([]);
@@ -108,7 +103,6 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* --- Logika Unique ID Master Lokasi --- */
   useEffect(() => {
     if (newLoc.id && newLoc.zone && newLoc.aisle) {
       setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
@@ -123,15 +117,17 @@ function App() {
 
   const getDesc = (item) => {
     if (!item) return '-';
-    return item.description || item.sku_desc || item.desc || '-';
+    return item.description || item.sku_desc || item.desc || item.nama_barang || '-';
   };
 
   const formatWIB = (dateStr) => {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    if (!dateStr || dateStr === '-') return '-';
+    try {
+        return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    } catch (e) { return dateStr; }
   };
 
-  /* ================= 4. FETCHING (SYNCED TO BACKEND) ================= */
+  /* ================= 4. FETCHING ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
@@ -155,7 +151,6 @@ function App() {
         const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
         setData(res.data?.data || []);
       }
-      
       axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
       axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => setReconCache(rr.data?.data || []));
     } catch (e) { setData([]); }
@@ -174,7 +169,7 @@ function App() {
     finally { setLoading(false); }
   };
 
-  /* ================= 5. HANDLERS (vcekpoint1 UTUH) ================= */
+  /* ================= 5. HANDLERS ================= */
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
@@ -191,23 +186,6 @@ function App() {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
       fetchData();
     } catch (e) { showToast("Gagal Toggle", "error"); }
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      setLoading(true);
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        showToast("Snapshot Terupload!"); fetchData();
-      } catch (err) { showToast("Gagal Upload", "error"); }
-      finally { setLoading(false); e.target.value = ''; }
-    };
-    reader.readAsArrayBuffer(file);
   };
 
   const handleSaveInput = async () => {
@@ -249,7 +227,24 @@ function App() {
     setSelectedBoxHuid('');
   };
 
-  /* ================= 6. RENDER LOGIC ================= */
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setLoading(true);
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
+        showToast("Snapshot Terupload!"); fetchData();
+      } catch (err) { showToast("Gagal Upload", "error"); }
+      finally { setLoading(false); e.target.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  /* ================= 6. RENDER UI ================= */
   const currentBoxData = useMemo(() => {
     return boxOptions.find(b => b.huid === selectedBoxHuid) || null;
   }, [selectedBoxHuid, boxOptions]);
@@ -277,7 +272,6 @@ function App() {
     );
   }
 
-  // --- MOBILE HOME ---
   if (isMobile && showMobileHome) {
     const b1 = (reconCache || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
     const b2 = (reconCache || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
@@ -314,7 +308,6 @@ function App() {
           .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
           .l-pt-addr { font-size: 8pt; line-height: 1.1; }
-          .l-huid { font-size: 9pt; margin-bottom: 2px; }
           .l-line { height: 2px; background: #000; margin: 1mm 0; }
           .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
           .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
@@ -339,13 +332,7 @@ function App() {
           <div style={menuSectionLabel}>OUTBOUND</div>
           {['Picking', 'Packing', 'Explorer', 'Print Label'].map(m => (
             <div key={m} onClick={() => setActiveMenu(m)} style={navItem(activeMenu === m)}>
-              <div style={{display:'flex', alignItems:'center', gap:8}}>
-                {m === 'Picking' && <Truck size={14}/>}
-                {m === 'Packing' && <Package size={14}/>}
-                {m === 'Explorer' && <Globe size={14}/>}
-                {m === 'Print Label' && <Printer size={14}/>}
-                {m}
-              </div>
+              <div style={{display:'flex', alignItems:'center', gap:8}}><Printer size={14}/> {m}</div>
             </div>
           ))}
           <button onClick={() => setIsLoggedIn(false)} style={btnLogout} className="no-print"><LogOut size={14} /></button>
@@ -395,10 +382,10 @@ function App() {
         )}
 
         {!(isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count')) && (
-            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
-        {/* --- CONTENT AREA DYNAMIC --- */}
+        {/* --- DYNAMIC RENDERER --- */}
         {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
            <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
@@ -421,7 +408,6 @@ function App() {
                     <option value="">-- PILIH BOX --</option>
                     {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
                  </select>
-                 {currentBoxData && <div style={boxInfo}><b>HUID:</b> {currentBoxData.huid}<br/><b>Items:</b> {currentBoxData.item_details?.length} SKU</div>}
               </div>
               <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}}>
                  <div style={{transform:'scale(0.7)', background:'#fff', width:'10cm', height:'10cm', border:'1px solid #ddd'}}>
@@ -433,7 +419,7 @@ function App() {
            (!isMobile || activeMenu === 'Reconciliation' || ['Picking','Packing','Explorer','2nt Count'].includes(activeMenu)) && (
              <div style={tableWrapper}>
                 <table style={tableStyle}>
-                    <thead style={{position:'sticky', top:0, background:'#fff', zIndex:5}}>
+                    <thead>
                       <tr style={{background:'#fafafa'}}>
                         {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
                             <th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(data.map(d=>d.unique_id)) : setSelectedRows([]) } /></th>
@@ -441,9 +427,9 @@ function App() {
                         {activeMenu === 'Reconciliation' ? (
                             <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                         ) : activeMenu === 'Packing' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th></>
+                            <><th style={thStyle}>BOX</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th></>
                         ) : activeMenu === 'Picking' ? (
-                            <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>USER</th><th style={thStyle}>TIME (WIB)</th></>
+                            <><th style={thStyle}>PICKLIST</th><th style={thStyle}>LOC</th><th style={thStyle}>SKU</th><th style={thStyle}>QTY</th><th style={thStyle}>TIME (WIB)</th></>
                         ) : activeMenu === 'Explorer' ? (
                             <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
                         ) : (
@@ -459,14 +445,8 @@ function App() {
                             )}
                             {activeMenu === 'Reconciliation' ? (
                                 <><td style={tdStyle}>{row.location_id}</td><td style={tdStyle}>{row.artikel}</td><td style={tdStyle}>{row.qty_snap}</td><td style={tdStyle}>{row.qty_1st}</td><td style={tdStyle}>{row.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row.qty_2nd||row.qty_1st||0) - Number(row.qty_snap||0))}</td><td style={tdStyle}>{row.final_status}</td></>
-                            ) : activeMenu === 'Packing' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.container_number}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
-                            ) : activeMenu === 'Picking' ? (
-                                <><td style={tdStyle}>{row.id}</td><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.product_id}</td><td style={tdStyle}>{row.qty_actual}</td><td style={tdStyle}>{row.picker_name}</td><td style={tdStyle}>{formatWIB(row.scanned_at)}</td></>
-                            ) : activeMenu === 'Explorer' ? (
-                                <><td style={tdStyle}>{row.picklist_number}</td><td style={tdStyle}>{row.sku}</td><td style={tdStyle}>{row.qty_req}</td><td style={tdStyle}>{row.qty_picked}</td><td style={tdStyle}>{row.qty_packed}</td><td style={tdStyle}>{row.status}</td></>
                             ) : (
-                                <><td style={tdStyle}>{row.location_id || row.unique_id}</td><td style={tdStyle}>{row.artikel || row.sku}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
+                                <><td style={tdStyle}>{row.location_id || row.unique_id || row.container_number}</td><td style={tdStyle}>{row.artikel || row.product_id || row.sku}</td><td style={tdStyle}>{row.qty_snap || row.qty_1st || row.qty_packed || row.qty_actual || row.qty_req}</td><td style={tdStyle}>{activeMenu.includes('Picking') || activeMenu.includes('Packing') ? formatWIB(row.scanned_at) : getDesc(row)}</td></>
                             )}
                         </tr>
                     ))}
@@ -476,7 +456,6 @@ function App() {
            )
         )}
 
-        {/* MOBILE FORMS (vcekpoint1) */}
         {isMobile && !showMobileHome && (activeMenu === '1st Count' || activeMenu === '2nt Count') && (
           <div style={formWrapper}>
              {activeMenu === '1st Count' && locInfo && (
@@ -485,7 +464,7 @@ function App() {
                   {locInfo.map((it, idx)=>(
                     <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #eee'}}>
                        <div><b>{it.artikel}</b><br/><span style={{fontSize:'0.6rem'}}>{getDesc(it)}</span></div>
-                       {reconCache.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel && d.qty_1st > 0) && <Check size={16} color="green"/>}
+                       {reconCache.some(d=>String(d.location_id).toUpperCase()===mobLoc.toUpperCase() && d.artikel===it.artikel && (d.qty_1st > 0 || d.qty_2nd > 0)) && <Check size={16} color="green"/>}
                     </div>
                   ))}
                 </div>
@@ -540,7 +519,7 @@ function App() {
 
 export default App;
 
-/* ================= STYLES ================= */
+/* ================= STYLES (TOTAL RECOVERY) ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const sidebarStyle = () => ({ width: 180, borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
@@ -551,14 +530,13 @@ const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY:
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
 const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
-const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
-const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
+const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', boxSizing: 'border-box', fontFamily: 'Lexend' };
 const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
-const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
+const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
 const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
@@ -574,11 +552,12 @@ const boxTitle = { fontWeight: '900', fontSize: '0.55rem', marginBottom: '5px', 
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (t) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: t === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
-const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
 const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
 const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
+const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
+const badgeStyle = { position:'absolute', top:-5, right:-10, background:'red', color:'white', fontSize:'0.6rem', minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, border:'2px solid #fff' };
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
