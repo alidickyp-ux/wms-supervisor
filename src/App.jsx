@@ -14,11 +14,12 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (OUTSIDE) ================= */
+/* ================= 1. PRINT COMPONENT (GLOBAL AREA) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box || !box.item_details) return null;
   const pages = [];
   const items = box.item_details || [];
+  // Pagination 12 line per lembar
   for (let i = 0; i < items.length; i += 12) pages.push(items.slice(i, i + 12));
 
   return (
@@ -46,7 +47,7 @@ const RenderLabelComponent = ({ box }) => {
              <tbody>
                 {pItems.map((it, k) => (
                   <tr key={k}>
-                    <td>{it?.sku}<br/><small>{it?.nama_item || it?.name}</small></td>
+                    <td>{it?.sku}<br/><small>{it?.nama_item || it?.name || '-'}</small></td>
                     <td style={{textAlign:'center'}}>{it?.qty}</td>
                   </tr>
                 ))}
@@ -54,11 +55,11 @@ const RenderLabelComponent = ({ box }) => {
           </table>
           <div className="l-line" style={{marginTop:'auto'}} />
           <div className="l-footer">
-             <div className="l-row"><span>Pack: <b>{box.packer_name || box.scanned_by}</b></span><span>Tot: <b>{box.total_pcs_box || box.qty_packed}</b></span></div>
-             <div className="l-row"><span>Tgl: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span><span>Wgt: <b>{box.weight_kg} KG</b></span></div>
+             <div className="l-row"><span>Packer: <b>{box.packer_name || box.scanned_by || '-'}</b></span><span>Total: <b>{box.total_pcs_box || box.qty_packed || 0}</b></span></div>
+             <div className="l-row"><span>Tgl: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span><span>Berat: <b>{box.weight_kg || '0'} KG</b></span></div>
           </div>
           <div className="l-barcode">
-              <div className="sj-label">NO SJ : {box.no_sj}</div>
+              <div className="sj-label">NO SJ : {box.no_sj || box.picklist_number}</div>
               <Barcode value={box.no_sj || box.picklist_number || ''} width={1.6} height={35} fontSize={0} margin={0} />
           </div>
         </div>
@@ -68,7 +69,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (vcekpoint1) ================= */
+  /* ================= 2. STATE (vcekpoint1 ORIGINAL) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -129,8 +130,10 @@ function App() {
 
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-') return '-';
-    try { return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }); }
-    catch (e) { return '-'; }
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    } catch (e) { return '-'; }
   };
 
   /* ================= 4. FETCHING ================= */
@@ -166,7 +169,7 @@ function App() {
     try {
       const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
       setBoxOptions(res.data?.data || []);
-    } catch (e) { showToast("Gagal tarik box", "error"); }
+    } catch (e) { showToast("Gagal tarik detail box", "error"); }
     finally { setLoading(false); }
   };
 
@@ -196,9 +199,6 @@ function App() {
 
     if (activeMenu === '1st Count' && !snapData.some(s => String(s.location_id).toUpperCase() === locU)) {
       return showToast("LOKASI TIDAK ADA DI SNAPSHOT!", "error");
-    }
-    if (activeMenu === '1st Count' && data.some(d => String(d.location_id).toUpperCase() === locU && String(d.artikel).toUpperCase() === artU)) {
-      return showToast("SUDAH DISCAN!", "error");
     }
 
     setLoading(true);
@@ -277,7 +277,7 @@ function App() {
     );
   }
 
-  // --- MOBILE VIEW ---
+  // --- MOBILE HOME ---
   if (isMobile && showMobileHome) {
     const b1 = (reconCache || []).filter(d => d.final_status === 'NEED 1ST COUNT').length;
     const b2 = (reconCache || []).filter(d => d.final_status === 'NEED 2ND COUNT').length;
@@ -310,22 +310,25 @@ function App() {
           .no-print { display: none !important; }
           .print-area-thermal { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
           .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
-          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; border-radius: 2px; }
+          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8.5pt; font-weight: bold; padding: 4px; border-radius: 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
           .l-pt-addr { font-size: 7.5pt; line-height: 1.1; }
           .l-line { height: 2px; background: #000; margin: 1mm 0; }
           .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .l-grid div { border-right: 1.5px solid #000; padding: 3px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
-          .l-grid div:last-child { border-right: none; }
-          .l-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+          .l-grid-node { border-right: 1.5px solid #000; padding: 3px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .l-grid-node:last-child { border-right: none; }
+          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
           .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
           .l-table td { padding: 2px; border: 0.5px solid #ccc; line-height: 1.1; }
+          .trunc-cell { max-width: 4.2cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
           .l-red { color: #FF0000; font-weight: bold; }
           .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
         }
         .print-area-thermal { display: none; }
-        .preview-thermal-wrap .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.7); transform-origin: top center; }
+        .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.7); transform-origin: top center; }
       `}</style>
+
+      {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
       
       {!isMobile && (
         <nav style={sidebarStyle()} className="no-print">
@@ -354,13 +357,7 @@ function App() {
             {!isMobile && (
               <>
                 {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
-                  <>
-                    <button onClick={handleBulkDelete} disabled={selectedRows.length === 0} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> DELETE</button>
-                    <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
-                  </>
-                )}
-                {activeMenu === 'Snapshoot' && (
-                   <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
+                  <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
                 )}
                 {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
                    <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
@@ -379,7 +376,7 @@ function App() {
           </div>
         </header>
 
-        {/* --- MOBILE EXECUTION (NO TABLES) --- */}
+        {/* --- MOBILE EXECUTION ONLY --- */}
         {isMobile && !showMobileHome ? (
            <div style={formWrapper}>
               {activeMenu === '1st Count' && (
@@ -395,26 +392,23 @@ function App() {
                           ))}
                        </div>
                     )}
-                    <label style={labelStyle}>SCAN LOKASI</label>
-                    <input ref={inputLocRef} value={mobLoc} style={mInput} autoFocus placeholder="Tembak Lokasi..." onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8) { setLocInfo(snapData.filter(d=>String(d.location_id).toUpperCase()===v)); inputArtRef.current?.focus(); }}} />
-                    <label style={labelStyle}>SCAN ARTIKEL</label>
-                    <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="Tembak SKU..." onChange={e=>{const v=e.target.value.toUpperCase(); setMobArt(v); if(v.length>=12) inputQtyRef.current?.focus();}} />
-                    <label style={labelStyle}>QUANTITY</label>
+                    <input ref={inputLocRef} value={mobLoc} style={mInput} autoFocus placeholder="Temukan Lokasi..." onChange={e=>{const v=e.target.value.toUpperCase(); setMobLoc(v); if(v.length>=8) { setLocInfo(snapData.filter(d=>String(d.location_id).toUpperCase()===v)); inputArtRef.current?.focus(); }}} />
+                    <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="Scan SKU..." onChange={e=>setMobArt(e.target.value.toUpperCase())} />
                     <input ref={inputQtyRef} type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSaveInput()} />
-                    <button onClick={handleSaveInput} style={btnBlack} disabled={loading}>{loading ? <Loader2 className="animate-spin" size={18}/> : "SIMPAN 1ST COUNT"}</button>
+                    <button onClick={handleSaveInput} style={btnBlack} disabled={loading}>{loading ? <Loader2 className="animate-spin" size={18}/> : "SAVE 1ST COUNT"}</button>
                  </>
               )}
               {activeMenu === '2nt Count' && (
                  <>
                     <select style={mInput} onChange={e=>{const [l,a]=e.target.value.split('|'); setSelectedLoc2nd((reconCache || []).find(d=>d.location_id===l && d.artikel===a)); setMobLoc(''); setMobArt('');}}>
-                       <option value="">-- PILIH ARTIKEL NEED 2ND --</option>
+                       <option value="">-- PILIH NEED 2ND --</option>
                        {(reconCache || []).filter(d=>d.final_status==='NEED 2ND COUNT').map((t,i)=>(<option key={i} value={`${t.location_id}|${t.artikel}`}>{t.location_id} | {t.artikel}</option>))}
                     </select>
                     {selectedLoc2nd && (
                        <div style={{marginTop:15}}>
                           <div style={boxInfoYellow}><b>{selectedLoc2nd.artikel}</b><br/>{getDesc(selectedLoc2nd)}<br/>Snap: {selectedLoc2nd.qty_snap} | 1st: {selectedLoc2nd.qty_1st}</div>
-                          <input value={mobLoc} style={mInput} placeholder="RE-SCAN LOKASI" onChange={e=>setMobLoc(e.target.value.toUpperCase())} />
-                          <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="RE-SCAN ARTIKEL" onChange={e=>setMobArt(e.target.value.toUpperCase())} />
+                          <input value={mobLoc} style={mInput} placeholder="LOKASI" onChange={e=>setMobLoc(e.target.value.toUpperCase())} />
+                          <input ref={inputArtRef} value={mobArt} style={mInput} placeholder="ARTIKEL" onChange={e=>setMobArt(e.target.value.toUpperCase())} />
                           <input type="number" style={qtyInput} value={mobQty} onChange={e=>setMobQty(e.target.value)} />
                           <button onClick={handleSaveInput} style={btnBlack} disabled={mobLoc!==selectedLoc2nd.location_id.toUpperCase()}>SAVE 2ND COUNT</button>
                        </div>
@@ -432,26 +426,25 @@ function App() {
               </div>
             )}
 
-            {!(isMobile) && (
-                <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+            {!isMobile && (
+                <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
             )}
 
             {activeMenu === 'Print Label' ? (
                <div style={{display:'flex', gap:20}}>
                   <div style={{flex:1}}>
-                     <label style={labelStyle}>1. NOMOR PCB / PICKLIST:</label>
+                     <label style={labelStyle}>1. PILIH PCB:</label>
                      <select style={mInput} value={selectedPcb} onChange={handlePcbChange}>
-                        <option value="">-- PILIH PCB --</option>
+                        <option value="">-- PCB --</option>
                         {[...new Set(data.map(b => b.picklist_number))].map((p, i) => <option key={i} value={p}>{p}</option>)}
                      </select>
-                     <label style={labelStyle}>2. BOX / KARUNG:</label>
+                     <label style={labelStyle}>2. PILIH BOX:</label>
                      <select style={mInput} value={selectedBoxHuid} disabled={!selectedPcb} onChange={e=>setSelectedBoxHuid(e.target.value)}>
-                        <option value="">-- PILIH BOX --</option>
+                        <option value="">-- BOX --</option>
                         {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
                      </select>
-                     {currentPrintData && <div style={boxInfo}><b>HUID:</b> {currentPrintData?.huid}</div>}
                   </div>
-                  <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}} className="preview-thermal-wrap">
+                  <div style={{flex:1.5, background:'#f5f5f5', padding:20, borderRadius:8, display:'flex', justifyContent:'center', minHeight: '520px'}} className="preview-box-render">
                      <RenderLabelComponent box={currentPrintData} />
                   </div>
                </div>
@@ -467,7 +460,7 @@ function App() {
             ) : (
                <div style={tableWrapper}>
                 <table style={tableStyle}>
-                    <thead style={{position:'sticky', top:0, background:'#fff', zIndex:5}}>
+                    <thead>
                       <tr style={{background:'#fafafa'}}>
                         {activeMenu === 'Master Lokasi' && (
                             <><th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(data.map(d=>d.unique_id)) : setSelectedRows([]) } /></th><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
@@ -515,7 +508,7 @@ function App() {
         )}
       </div>
 
-      <RenderLabelComponent box={currentPrintData} />
+      <div className="print-area-thermal"><RenderLabelComponent box={currentPrintData} /></div>
 
       {showCompletePopup && (
         <div style={popupOverlay} onClick={()=>setShowCompletePopup(false)}>
@@ -554,6 +547,8 @@ function App() {
     </div>
   );
 }
+
+export default App;
 
 /* ================= STYLES ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
@@ -597,5 +592,4 @@ const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
-
-export default App;
+const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
