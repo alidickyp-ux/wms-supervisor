@@ -14,7 +14,7 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (DITARUH DI LUAR AGAR ANTI-BLANK) ================= */
+/* ================= 1. PRINT COMPONENT (OUTSIDE) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box) return null;
   const pages = [];
@@ -30,15 +30,14 @@ const RenderLabelComponent = ({ box }) => {
              <div><div className="l-pt-name">PT DUA PULUH TIGA</div><div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div></div>
              <div style={{textAlign:'right'}}>
                 <div className="l-huid">HUID: <b>{box.huid}</b></div>
-                <QRCode value={box.huid || ''} size={42}/>
-                <div style={{fontSize:'6pt'}}>{box.huid}</div>
+                <QRCode value={box.huid || ''} size={42}/><div style={{fontSize:'6pt'}}>{box.huid}</div>
              </div>
           </div>
           <div className="l-line" />
           <div className="l-grid">
-             <div>{box.picklist_number}</div>
-             <div>{box.nama_toko}</div>
-             <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
+            <div>{box.picklist_number}</div>
+            <div>{box.nama_toko}</div>
+            <div style={{fontSize:'7pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
           <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
@@ -47,9 +46,9 @@ const RenderLabelComponent = ({ box }) => {
              <tbody>{pItems.map((it, k) => (<tr key={k}><td>{it?.sku}</td><td className="trunc-cell">{it?.nama_item || it?.name}</td><td style={{textAlign:'center'}}>{it?.qty}</td></tr>))}</tbody>
           </table>
           <div className="l-line" style={{marginTop:'auto'}} />
-          <div className="l-footer" style={{fontSize:'8.5pt', padding:'4px'}}>
-             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Packer:</span> <b>{box.packer_name || box.scanned_by}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box || box.qty_packed} PCS</b></span></div>
-             <div style={{display:'flex', justifyContent:'space-between'}}><span><span className="l-red">Tgl:</span> <b>{(box.tanggal_packing || box.scanned_at)?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
+          <div className="l-footer">
+             <div className="l-row"><span><span className="l-red">Packer:</span> <b>{box.packer_name || box.scanned_by}</b></span><span><span className="l-red">Total:</span> <b>{box.total_pcs_box || box.qty_packed} PCS</b></span></div>
+             <div className="l-row"><span><span className="l-red">Tgl:</span> <b>{(box.tanggal_packing || box.scanned_at)?.substring(0,10)}</b></span><span><span className="l-red">Berat:</span> <b>{box.weight_kg} KG</b></span></div>
           </div>
           <div className="l-barcode">
               <div style={{fontWeight:900, fontSize:'9pt'}}>NO SJ : {box.no_sj}</div>
@@ -62,7 +61,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (RECOVERY vcekpoint1) ================= */
+  /* ================= 2. STATE (vcekpoint1) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -124,8 +123,7 @@ function App() {
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-') return '-';
     try {
-        const d = new Date(dateStr);
-        return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
     } catch (e) { return dateStr; }
   };
 
@@ -182,11 +180,13 @@ function App() {
     finally { setLoginLoading(false); }
   };
 
+  // --- TOGGLE ASSIGN (Sakti - vcekpoint1) ---
   const handleToggle = async (uid, currentStatus) => {
     const nextStatus = currentStatus === 'open' ? 'closed' : 'open';
     try {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
-      fetchData();
+      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
+      showToast(`${uid} set to ${nextStatus}`);
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
@@ -304,30 +304,22 @@ function App() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          .print-area-thermal { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
+          .print-area { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
           .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
-          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; border-radius: 2px; }
-          .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
+          .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8.5pt; font-weight: bold; padding: 4px; border-radius: 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
-          .l-pt-addr { font-size: 7pt; line-height: 1.1; }
-          .huid-txt { font-size: 9pt; margin-bottom: 2px; text-align: right; }
-          .black-line { height: 2px; background: #000; margin: 1mm 0; }
-          .store-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .grid-cell { border-right: 1.5px solid #000; padding: 4px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
-          .grid-cell:last-child { border-right: none; }
-          .box-content-title { font-weight: bold; font-size: 9pt; padding: 2px; }
-          .label-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-          .label-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
-          .label-table td { padding: 2px; border: 0.5px solid #ccc; }
-          .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-          .footer-row { display: flex; justify-content: space-between; font-size: 8pt; margin-bottom: 1px; }
-          .red-bold { color: #FF0000; font-weight: bold; }
-          .barcode-sj { text-align: center; margin-top: auto; padding-bottom: 1mm; }
-          .sj-label { font-weight: bold; font-size: 10pt; }
+          .l-pt-addr { font-size: 8pt; line-height: 1.1; }
+          .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
+          .l-grid div { border-right: 1.5px solid #000; padding: 4px; font-size: 8.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .l-grid div:last-child { border-right: none; }
+          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+          .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
+          .l-table td { padding: 2px; border: 0.5px solid #ccc; }
+          .l-red { color: #FF0000; font-weight: bold; }
+          .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
         }
-        .print-area-thermal { display: none; }
+        .print-area { display: none; }
         .preview-wrap-thermal .label-10x10 { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.85); transform-origin: top center; }
-        .preview-wrap-thermal .banner-unboxing { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
       `}</style>
       
       {!isMobile && (
@@ -366,7 +358,7 @@ function App() {
                    <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
                 )}
                 {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
-                   <button onClick={() => { if(window.confirm("Hapus data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+                   <button onClick={() => { if(window.confirm("Bersihkan data?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
                 )}
                 {activeMenu === 'Print Label' && selectedBoxHuid && (
                   <button onClick={() => window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
@@ -390,11 +382,23 @@ function App() {
         )}
 
         {!(isMobile && (activeMenu === '1st Count' || activeMenu === '2nt Count')) && (
-            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+            <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         )}
 
-        {/* --- MAIN CONTENT RENDERER --- */}
-        {activeMenu === 'Print Label' ? (
+        {/* --- DYNAMIC RENDERER --- */}
+        {!isMobile && activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
+           <div style={gridContainer()}>
+              {filteredData.map((row, idx) => (
+                <div key={idx} style={cardGrid}>
+                  <span style={{ fontWeight: 800, marginBottom: 5 }}>{row.unique_id}</span>
+                  {/* --- SAKLAR TOGGLE ASSIGN (RESTORED) --- */}
+                  <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}>
+                    <div style={toggleCircle(row.assign === 'open')} />
+                  </div>
+                </div>
+              ))}
+           </div>
+        ) : activeMenu === 'Print Label' ? (
            <div style={{display:'flex', gap:20, flexDirection: isMobile ? 'column':'row'}}>
               <div style={{flex:1}}>
                  <label style={labelStyle}>1. NOMOR PCB / PICKLIST:</label>
@@ -475,8 +479,7 @@ function App() {
         )}
       </div>
 
-      {/* --- AREA PRINT (ISOLATED) --- */}
-      <div className="print-area-thermal">
+      <div className="print-area">
          <RenderLabelComponent box={currentBoxData} />
       </div>
 
@@ -518,6 +521,8 @@ function App() {
   );
 }
 
+export default App;
+
 /* ================= STYLES ================= */
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
@@ -536,7 +541,7 @@ const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '1
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
-const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
+const loginPage = { height: '100vh', display: 'flex', flexDirection:'column', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
 const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const mobileHomeLayout = { display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#fff', fontFamily: 'Lexend' };
@@ -558,8 +563,5 @@ const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(aut
 const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
 const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
-const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
-
-export default App;
