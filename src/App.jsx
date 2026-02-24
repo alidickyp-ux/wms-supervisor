@@ -14,52 +14,84 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT ================= */
+/* ================= 1. PRINT COMPONENT (FORMAT PDF MATCH) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box || !box.item_details) return null;
   const pages = [];
   const items = box.item_details || [];
+  // Maksimal 12 baris per halaman agar muat di 10x10cm
   for (let i = 0; i < items.length; i += 12) pages.push(items.slice(i, i + 12));
 
   return (
-    <div className="print-area-thermal">
+    <div id="print-label-container" className="print-area-thermal">
       {pages.map((pItems, idx) => (
         <div key={idx} className={`l-page ${idx === pages.length - 1 ? 'last-page' : ''}`}>
+          {/* Header Unboxing */}
           <div className="u-banner">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
+          
           <div className="l-header">
-             <div><div className="l-pt-name">PT DUA PULUH TIGA</div><div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div></div>
-             <div style={{textAlign:'right'}}>
-                <div className="l-huid">HUID: <b>{box.huid}</b></div>
-                <QRCode value={box.huid || ''} size={42}/>
+             <div className="pt-info">
+                <div className="l-pt-name">PT DUA PULUH TIGA</div>
+                <div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div>
+             </div>
+             <div className="huid-info">
+                <div className="l-huid-label">HUID: <b>{box.huid}</b></div>
+                <QRCode value={box.huid || ''} size={45} level="H" />
              </div>
           </div>
+
           <div className="l-line" />
+          
+          {/* Picklist & Store Info Grid */}
           <div className="l-grid">
             <div className="l-grid-node"><b>{box.picklist_number}</b></div>
-            <div className="l-grid-node"><b>{box.nama_toko || '-'}</b></div>
+            <div className="l-grid-node"><b>{box.nama_toko || box.nama_customer || '-'}</b></div>
             <div className="l-grid-node" style={{fontSize:'6pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
+          
           <div className="l-line" />
-          <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
+          
+          <div className="box-content-title">
+            BOX CONTENT <span style={{float:'right'}}>BOX: {box.container_number || 'BOX-001'} ({idx+1}/{pages.length})</span>
+          </div>
+
           <table className="l-table">
-             <thead><tr><th>Artikel</th><th>Qty</th></tr></thead>
+             <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
              <tbody>
                 {pItems.map((it, k) => (
                   <tr key={k}>
-                    <td>{it?.sku}<br/><small>{it?.nama_item || it?.name || '-'}</small></td>
-                    <td style={{textAlign:'center'}}>{it?.qty}</td>
+                    <td style={{width:'30%'}}>{it?.sku}</td>
+                    <td style={{width:'60%'}} className="trunc-cell">{it?.nama_item || it?.name || '-'}</td>
+                    <td style={{width:'10%', textAlign:'center'}}>{it?.qty}</td>
                   </tr>
                 ))}
              </tbody>
           </table>
+
           <div className="l-line" style={{marginTop:'auto'}} />
+          
+          {/* Footer Info */}
           <div className="l-footer">
-             <div className="l-row"><span>Packer: <b>{box.packer_name || box.scanned_by || '-'}</b></span><span>Total: <b>{box.total_pcs_box || box.qty_packed || 0}</b></span></div>
-             <div className="l-row"><span>Tgl: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span><span>Berat: <b>{box.weight_kg || '0'} KG</b></span></div>
+             <div className="l-row">
+                <span>Packer: <b>{box.packer_name || box.scanned_by || '-'}</b></span>
+                <span>Total Qty: <b>{box.total_pcs_box || box.qty_packed || 0} PCS</b></span>
+             </div>
+             <div className="l-row">
+                <span>Tanggal: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span>
+                <span>Berat: <b>{box.weight_kg || '0'} KG</b></span>
+             </div>
           </div>
+
+          {/* Barcode SJ */}
           <div className="l-barcode">
-              <div className="sj-label">NO SJ : {box.no_sj || box.picklist_number}</div>
-              <Barcode value={box.no_sj || box.picklist_number || ''} width={1.6} height={35} fontSize={0} margin={0} />
+              <div className="sj-label">NO SJ: {box.no_sj || box.picklist_number}</div>
+              <Barcode 
+                value={box.no_sj || box.picklist_number || ''} 
+                width={1.6} 
+                height={35} 
+                fontSize={0} 
+                margin={0} 
+              />
           </div>
         </div>
       ))}
@@ -77,7 +109,7 @@ function App() {
   
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [masterTab, setMasterTab] = useState('grid'); 
-  const [explorerTab, setExplorerTab] = useState('active'); // New Explorer Tab
+  const [explorerTab, setExplorerTab] = useState('active');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -98,7 +130,7 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* ================= 3. UTILS (SAFE WIB) ================= */
+  /* ================= 3. UTILS ================= */
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-' || dateStr === 'null') return dateStr;
     if (typeof dateStr === 'string' && (dateStr.length < 10 || isNaN(Date.parse(dateStr)))) return dateStr;
@@ -121,7 +153,6 @@ function App() {
     return item.description || item.sku_desc || item.desc || item.product_description || '-';
   };
 
-  /* ================= 4. EXPORT ================= */
   const handleExportExcel = () => {
     if (!data || data.length === 0) return showToast("Tidak ada data", "error");
     const exportData = data.map(item => {
@@ -136,7 +167,7 @@ function App() {
     XLSX.writeFile(wb, `COOL_${activeMenu}_WIB.xlsx`);
   };
 
-  /* ================= 5. FETCHING ================= */
+  /* ================= 4. FETCHING ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
@@ -172,7 +203,7 @@ function App() {
     finally { setLoading(false); }
   };
 
-  /* ================= 6. HANDLERS ================= */
+  /* ================= 5. HANDLERS ================= */
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
@@ -208,32 +239,21 @@ function App() {
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
-  /* ================= 7. HEADER LOGIC ================= */
+  /* ================= 6. HEADER DRILLDOWN LOGIC ================= */
   const groupedExplorerHeaders = useMemo(() => {
     if (activeMenu !== 'Explorer' || !data) return { active: [], completed: [] };
-
     const groups = data.reduce((acc, curr) => {
       const key = curr.picklist_number;
       if (!key) return acc;
-      if (!acc[key]) {
-        acc[key] = { 
-          id: key, name: curr.nama_customer || curr.nama_toko || '-', 
-          lines: [], allPacked: true 
-        };
-      }
+      if (!acc[key]) acc[key] = { id: key, name: curr.nama_customer || curr.nama_toko || '-', lines: [], allPacked: true };
       acc[key].lines.push(curr);
       if (curr.status !== 'packed') acc[key].allPacked = false;
       return acc;
     }, {});
-
     const result = Object.values(groups);
-    return {
-      active: result.filter(h => !h.allPacked),
-      completed: result.filter(h => h.allPacked)
-    };
+    return { active: result.filter(h => !h.allPacked), completed: result.filter(h => h.allPacked) };
   }, [data, activeMenu]);
 
-  // Logic for Picking/Packing headers (non-tabbed)
   const headerData = useMemo(() => {
     if (!['Picking', 'Packing'].includes(activeMenu) || !data) return null;
     const groups = data.reduce((acc, curr) => {
@@ -258,12 +278,12 @@ function App() {
            String(item.artikel || item.product_id || item.sku || '').includes(s);
   });
 
-  /* ================= 8. RENDER ================= */
+  /* ================= 7. RENDER DASHBOARD ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
         <div style={loginCard}>
-          <div style={loginHeader}><h2>COOL DASHBOARD</h2><p>ADMINISTRATION SYSTEM</p></div>
+          <div style={loginHeader}><h2>COOL</h2><p>WAREHOUSE MANGEMENT SYSTEM</p></div>
           <div style={{padding:'30px'}}>
             <input placeholder="Username" style={mInput} value={username} onChange={e=>setUsername(e.target.value)} />
             <input type="password" placeholder="Password" style={mInput} value={password} onChange={e=>setPassword(e.target.value)} />
@@ -276,30 +296,46 @@ function App() {
 
   return (
     <div style={mainLayout}>
+      {/* CSS ISOLATION UNTUK PRINT 10x10 CM DENGAN MARGIN 0.2 CM */}
       <style>{`
-        @media print {
-          body > * { display: none !important; }
-          .print-area-thermal, .print-area-thermal * { display: block !important; }
-          .print-area-thermal { position: absolute; left: 0; top: 0; width: 10cm; }
-          .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; }
-          .l-page.last-page { page-break-after: avoid !important; }
-          .u-banner { background: #FF0000 !important; color: white !important; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
-          .l-pt-name { font-weight: 900; font-size: 13pt; }
-          .l-pt-addr { font-size: 7.5pt; line-height: 1.1; }
-          .l-line { height: 2px; background: #000; margin: 1mm 0; }
-          .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-          .l-grid-node { border-right: 1.5px solid #000; padding: 3px; font-size: 8pt; font-weight: bold; text-align: center; }
-          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
-          .l-table th { background: #eee; border: 0.5px solid #000; }
-          .l-table td { padding: 2px; border: 0.5px solid #ccc; }
-          .l-red { color: #FF0000 !important; font-weight: bold; }
-          .l-barcode { text-align: center; margin-top: auto; }
+        @media screen {
+          .print-area-thermal { display: none; }
         }
-        .print-area-thermal { display: none; }
-        .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.75); transform-origin: top center; }
-        .preview-box-render .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
-        .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
-        .header-card:hover { border-color: #000; }
+        @media print {
+          @page { size: 10cm 10cm; margin: 0; }
+          body { margin: 0; padding: 0; background: #fff; }
+          .no-print { display: none !important; }
+          .print-area-thermal { display: block !important; width: 10cm; height: 10cm; }
+          .l-page { 
+            width: 10cm; height: 10cm; padding: 0.2cm; 
+            box-sizing: border-box; page-break-after: always; 
+            display: flex; flex-direction: column; font-family: 'Helvetica', 'Arial', sans-serif;
+            background: #fff; border: none;
+          }
+          .l-page.last-page { page-break-after: avoid !important; }
+          .u-banner { background: #FF0000 !important; -webkit-print-color-adjust: exact; color: #fff !important; text-align: center; font-size: 7.5pt; font-weight: bold; padding: 4px; border-radius: 2px; }
+          .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
+          .l-pt-name { font-weight: 900; font-size: 11pt; }
+          .l-pt-addr { font-size: 6.5pt; line-height: 1.1; color: #333; }
+          .l-huid-label { font-size: 8pt; margin-bottom: 2px; font-weight: bold; }
+          .l-line { height: 1.5px; background: #000; margin: 1mm 0; }
+          .l-grid { display: grid; grid-template-columns: 1.2fr 1.5fr 1fr; border: 1.2px solid #000; }
+          .l-grid-node { border-right: 1.2px solid #000; padding: 3px; font-size: 7.5pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
+          .l-grid-node:last-child { border-right: none; }
+          .box-content-title { font-weight: 900; font-size: 8pt; padding: 2px 0; }
+          .l-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+          .l-table th { background: #eee !important; -webkit-print-color-adjust: exact; text-align: left; padding: 3px; border: 0.8px solid #000; }
+          .l-table td { padding: 3px; border: 0.8px solid #333; line-height: 1; }
+          .trunc-cell { max-width: 4.5cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .l-footer { font-size: 7.5pt; padding: 3px 0; }
+          .l-row { display: flex; justify-content: space-between; margin-bottom: 1px; }
+          .l-red { color: #FF0000 !important; font-weight: bold; }
+          .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
+          .sj-label { font-weight: bold; font-size: 9pt; margin-bottom: 1px; }
+        }
+        .preview-box-render { transform: scale(0.85); transform-origin: top center; }
+        .preview-box-render .l-page { width: 10cm; height: 10cm; padding: 0.2cm; box-sizing: border-box; background: #fff; border: 1px solid #ccc; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .preview-box-render .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 7.5pt; font-weight: bold; padding: 4px; }
         .tab-btn { padding: 8px 20px; font-size: 0.7rem; font-weight: 800; border: none; background: #f5f5f5; cursor: pointer; border-radius: 6px; }
         .tab-btn.active { background: #000; color: #fff; }
       `}</style>
@@ -337,21 +373,20 @@ function App() {
             {activeMenu === 'Snapshoot' && (
               <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
             )}
-            {['1st Count', '2nt Count', 'Snapshoot'].includes(activeMenu) && (
-              <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':'snap'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+            {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
+              <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
             )}
             {activeMenu === 'Print Label' && selectedBoxHuid && (
               <button onClick={() => window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
             )}
-            <button onClick={handleExportExcel} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
+            <button onClick={handleExportExcel} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT WIB</button>
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
         </header>
 
-        {/* --- TABS FOR EXPLORER --- */}
         {activeMenu === 'Explorer' && !selectedHeader && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-            <button className={`tab-btn ${explorerTab === 'active' ? 'active' : ''}`} onClick={()=>setExplorerTab('active')}>ACTIVE PICKLIST</button>
+            <button className={`tab-btn ${explorerTab === 'active' ? 'active' : ''}`} onClick={()=>setExplorerTab('active')}>ACTIVE</button>
             <button className={`tab-btn ${explorerTab === 'completed' ? 'active' : ''}`} onClick={()=>setExplorerTab('completed')}>COMPLETED (CLOSE)</button>
           </div>
         )}
@@ -365,19 +400,14 @@ function App() {
 
         {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
 
-        {/* --- RENDERER --- */}
+        {/* --- DYNAMIC RENDERER --- */}
         {activeMenu === 'Explorer' && !selectedHeader ? (
            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:15}}>
               {groupedExplorerHeaders[explorerTab].filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
                 <div key={i} className="header-card" onClick={()=>setSelectedHeader(h.id)}>
-                   <div>
-                      <div style={{fontWeight:900, fontSize:'0.85rem'}}>{h.id}</div>
-                      <div style={{fontSize:'0.65rem', color:'#999'}}>{h.name}</div>
-                   </div>
+                   <div><div style={{fontWeight:900, fontSize:'0.85rem'}}>{h.id}</div><div style={{fontSize:'0.65rem', color:'#999'}}>{h.name}</div></div>
                    <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4}}>
-                      <div style={{fontSize: '0.55rem', padding: '3px 8px', borderRadius: '4px', fontWeight: 900, background: h.allPacked ? '#dcfce7' : '#fee2e2', color: h.allPacked ? '#166534' : '#991b1b'}}>
-                        {h.allPacked ? 'CLOSE' : 'OPEN'}
-                      </div>
+                      <div style={{fontSize: '0.55rem', padding: '3px 8px', borderRadius: '4px', fontWeight: 900, background: h.allPacked ? '#dcfce7' : '#fee2e2', color: h.allPacked ? '#166534' : '#991b1b'}}>{h.allPacked ? 'CLOSE' : 'OPEN'}</div>
                       <div style={{background:'#f5f5f5', padding:'4px 10px', borderRadius:20, fontSize:'0.6rem', fontWeight:800}}>{h.lines.length} LINES</div>
                    </div>
                 </div>
@@ -410,15 +440,6 @@ function App() {
                   <RenderLabelComponent box={currentPrintData} />
               </div>
             </div>
-        ) : activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
-            <div style={gridContainer()}>
-              {filteredData.map((row, idx) => (
-                <div key={idx} style={cardGrid}>
-                  <span style={{ fontWeight: 800, marginBottom: 5 }}>{row?.unique_id}</span>
-                  <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
-                </div>
-              ))}
-            </div>
         ) : (
             <div style={tableWrapper}>
             <table style={tableStyle}>
@@ -429,11 +450,11 @@ function App() {
                     ) : activeMenu === 'Reconciliation' ? (
                         <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                     ) : activeMenu === 'Picking' ? (
-                        <><th style={thStyle}>ID</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>PICKER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>STATUS</th></>
+                        <><th style={thStyle}>ID</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>PICKER</th><th style={thStyle}>TIME</th><th style={thStyle}>STATUS</th></>
                     ) : activeMenu === 'Packing' ? (
-                        <><th style={thStyle}>ID</th><th style={thStyle}>BOX #</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>PACKER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>HUID</th><th style={thStyle}>STATUS</th></>
+                        <><th style={thStyle}>ID</th><th style={thStyle}>BOX #</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>PACKER</th><th style={thStyle}>TIME</th><th style={thStyle}>HUID</th><th style={thStyle}>STATUS</th></>
                     ) : activeMenu === 'Explorer' ? (
-                        <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
+                        <><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
                     ) : (
                         <><th style={thStyle}>LOCATION_ID</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP (WIB)</th><th style={thStyle}>OPERATOR</th></>
                     )}
@@ -447,11 +468,11 @@ function App() {
                         ) : activeMenu === 'Reconciliation' ? (
                             <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdStyle}>{row?.qty_1st}</td><td style={tdStyle}>{row?.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row?.qty_2nd||row?.qty_1st||0) - Number(row?.qty_snap||0))}</td><td style={tdStyle}>{row?.final_status}</td></>
                         ) : activeMenu === 'Picking' ? (
-                            <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.qty_actual}</td><td style={tdStyle}>{row?.picker_name}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.status}</td></>
+                            <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.qty_actual}</td><td style={tdStyle}>{row?.picker_name}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdStyle}>{row?.status}</td></>
                         ) : activeMenu === 'Packing' ? (
-                            <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.status}</td></>
+                            <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.status}</td></>
                         ) : activeMenu === 'Explorer' ? (
-                            <><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
+                            <><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
                         ) : (
                             <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_1st || row?.qty_2nd || row?.qty}</td><td style={tdStyle}>{formatWIB(row?.scanned_at || row?.timestamp)}</td><td style={tdStyle}>{row?.operator}</td></>
                         )}
@@ -463,7 +484,7 @@ function App() {
         )}
       </div>
 
-      {/* RENDER FOR REAL PRINT */}
+      {/* RENDER FOR REAL PRINT (HIDDEN ON SCREEN) */}
       <RenderLabelComponent box={currentPrintData} />
 
       {showAddForm && (
