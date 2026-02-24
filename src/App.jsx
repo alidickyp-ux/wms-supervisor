@@ -40,7 +40,7 @@ const RenderLabelComponent = ({ box }) => {
             <div className="l-grid-node" style={{fontSize:'6pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
-          <div className="l-content-title">BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
+          <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
           <table className="l-table">
              <thead><tr><th>Artikel</th><th>Qty</th></tr></thead>
              <tbody>
@@ -68,7 +68,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (V36 DRILLDOWN MODE) ================= */
+  /* ================= 2. STATE (V37 DRILLDOWN EXPLORER) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -128,7 +128,7 @@ function App() {
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
-    setSelectedHeader(null); // Reset drilldown view on menu change
+    setSelectedHeader(null); 
     try {
       if (activeMenu === 'Print Label') {
         const res = await axios.get(`${API_OUTBOUND}?target=packing_transactions`);
@@ -205,20 +205,23 @@ function App() {
 
   /* ================= 6. HEADER LOGIC (DRILLDOWN) ================= */
   const headerData = useMemo(() => {
-    const drilldownMenus = ['Picking', 'Packing', 'Reconciliation'];
+    const drilldownMenus = ['Picking', 'Packing', 'Explorer']; // Recon dihapus dari sini (balik ke list)
     if (!drilldownMenus.includes(activeMenu)) return null;
 
     const groups = data.reduce((acc, curr) => {
-      const key = curr.picklist_number || curr.location_id; // Picklist for Outbound, Location for Recon
+      const key = curr.picklist_number; 
       if (!acc[key]) {
         acc[key] = {
           id: key,
-          display_name: curr.picklist_number || curr.location_id,
-          sub_name: curr.nama_customer || curr.nama_toko || (activeMenu === 'Reconciliation' ? `Zone: ${curr.zone}` : '-'),
-          count: 0
+          display_name: key,
+          sub_name: curr.nama_customer || curr.nama_toko || '-',
+          count: 0,
+          all_closed: true // Logic default true
         };
       }
       acc[key].count += 1;
+      // Jika ada satu line statusnya bukan 'CLOSE', maka header status jadi OPEN
+      if (curr.status !== 'CLOSE') acc[key].all_closed = false;
       return acc;
     }, {});
     return Object.values(groups);
@@ -230,7 +233,7 @@ function App() {
 
   const filteredData = (data || []).filter(item => {
     if (selectedHeader) {
-        return (item.picklist_number === selectedHeader) || (item.location_id === selectedHeader);
+        return (item.picklist_number === selectedHeader);
     }
     if (!searchTerm) return true;
     const s = searchTerm.toUpperCase();
@@ -278,8 +281,9 @@ function App() {
         }
         .print-area-thermal { display: none; }
         .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.7); transform-origin: top center; }
-        .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
+        .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; position: relative; }
         .header-card:hover { border-color: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .status-badge { font-size: 0.55rem; padding: 2px 8px; borderRadius: 4px; fontWeight: 900; position: absolute; top: 10px; right: 10px; }
       `}</style>
 
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
@@ -341,7 +345,7 @@ function App() {
 
         {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
 
-        {/* --- RENDERER: HEADER MODE --- */}
+        {/* --- RENDERER: HEADER MODE (OUTBOUND ONLY) --- */}
         {headerData && !selectedHeader ? (
            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:15}}>
               {headerData.filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
@@ -350,7 +354,16 @@ function App() {
                       <div style={{fontWeight:900, fontSize:'0.85rem'}}>{h.display_name}</div>
                       <div style={{fontSize:'0.65rem', color:'#999'}}>{h.sub_name}</div>
                    </div>
-                   <div style={{background:'#f5f5f5', padding:'4px 10px', borderRadius:20, fontSize:'0.6rem', fontWeight:800}}>{h.count} ITEMS</div>
+                   <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4}}>
+                      <div style={{
+                        ...statusBadgeStyle, 
+                        background: h.all_closed ? '#dcfce7' : '#fee2e2', 
+                        color: h.all_closed ? '#166534' : '#991b1b'
+                      }}>
+                        {h.all_closed ? 'CLOSED' : 'OPEN'}
+                      </div>
+                      <div style={{background:'#f5f5f5', padding:'4px 10px', borderRadius:20, fontSize:'0.6rem', fontWeight:800}}>{h.count} LINES</div>
+                   </div>
                 </div>
               ))}
            </div>
@@ -465,6 +478,7 @@ function App() {
 export default App;
 
 /* ================= STYLES ================= */
+const statusBadgeStyle = { fontSize: '0.6rem', padding: '3px 10px', borderRadius: '4px', fontWeight: 900 };
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const sidebarStyle = (m) => ({ width: m ? '0px' : '200px', display: m ? 'none' : 'block', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
@@ -487,10 +501,11 @@ const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (t) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: t === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
+const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
+const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
+const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
+const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
+const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
-const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
-const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
-const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
-const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
