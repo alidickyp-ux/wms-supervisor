@@ -14,7 +14,7 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (GLOBAL) ================= */
+/* ================= 1. PRINT COMPONENT (STABLE) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box || !box.item_details) return null;
   const pages = [];
@@ -40,7 +40,7 @@ const RenderLabelComponent = ({ box }) => {
             <div className="l-grid-node" style={{fontSize:'6pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
-          <div className="l-content-title">BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
+          <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
           <table className="l-table">
              <thead><tr><th>Artikel</th><th>Qty</th></tr></thead>
              <tbody>
@@ -54,8 +54,8 @@ const RenderLabelComponent = ({ box }) => {
           </table>
           <div className="l-line" style={{marginTop:'auto'}} />
           <div className="l-footer">
-             <div className="l-row"><span>Pack: <b>{box.packer_name || box.scanned_by}</b></span><span>Total: <b>{box.total_pcs_box || box.qty_packed}</b></span></div>
-             <div className="l-row"><span>Tgl: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span><span>Berat: <b>{box.weight_kg} KG</b></span></div>
+             <div className="l-row"><span>Packer: <b>{box.packer_name || box.scanned_by || '-'}</b></span><span>Total: <b>{box.total_pcs_box || box.qty_packed || 0}</b></span></div>
+             <div className="l-row"><span>Tgl: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span><span>Berat: <b>{box.weight_kg || '0'} KG</b></span></div>
           </div>
           <div className="l-barcode">
               <div className="sj-label">NO SJ : {box.no_sj || box.picklist_number}</div>
@@ -68,7 +68,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (V38 DRILLDOWN FIX) ================= */
+  /* ================= 2. STATE (V39 STABLE) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -84,11 +84,9 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
-
-  // Drilldown State
   const [selectedHeader, setSelectedHeader] = useState(null);
 
-  /* Print Integration */
+  /* Print States */
   const [selectedPcb, setSelectedPcb] = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions] = useState([]);
@@ -100,13 +98,18 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    if (newLoc.id && newLoc.zone && newLoc.aisle) {
-      setNewLoc(prev => ({ ...prev, unique: `${prev.zone.toUpperCase()}-${prev.aisle}` }));
-    }
-  }, [newLoc.id, newLoc.zone, newLoc.aisle]);
+  /* ================= 3. UTILS (CONVERT TIME TO WIB) ================= */
+  const formatWIB = (dateStr) => {
+    if (!dateStr || dateStr === '-' || dateStr === 'null') return '-';
+    try {
+      return new Date(dateStr).toLocaleString('id-ID', { 
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    } catch (e) { return '-'; }
+  };
 
-  /* ================= 3. UTILS ================= */
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
@@ -117,14 +120,30 @@ function App() {
     return item.description || item.sku_desc || item.desc || item.product_description || '-';
   };
 
-  const formatWIB = (dateStr) => {
-    if (!dateStr || dateStr === '-') return '-';
-    try {
-      return new Date(dateStr).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-    } catch (e) { return '-'; }
+  /* ================= 4. EXCEL EXPORT (WIB VERSION) ================= */
+  const handleExportExcel = () => {
+    if (!data || data.length === 0) return showToast("Tidak ada data untuk export", "error");
+    
+    // Proses data agar timestamp menjadi format WIB sebelum di-export
+    const exportData = data.map(item => {
+      const newItem = { ...item };
+      // Scan semua key yang mengandung kata 'at', 'time', atau 'date'
+      Object.keys(newItem).forEach(key => {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey.includes('at') || lowerKey.includes('time') || lowerKey.includes('date') || lowerKey.includes('stamp')) {
+           newItem[key] = formatWIB(newItem[key]);
+        }
+      });
+      return newItem;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Data");
+    XLSX.writeFile(wb, `COOL_${activeMenu}_WIB.xlsx`);
   };
 
-  /* ================= 4. FETCHING ================= */
+  /* ================= 5. FETCHING ================= */
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
@@ -160,7 +179,7 @@ function App() {
     finally { setLoading(false); }
   };
 
-  /* ================= 5. HANDLERS ================= */
+  /* ================= 6. HANDLERS ================= */
   const handleLogin = async () => {
     setLoginLoading(true);
     try {
@@ -186,24 +205,7 @@ function App() {
     setSelectedBoxHuid('');
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      setLoading(true);
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
-        showToast("Snapshot Terupload!"); fetchData();
-      } catch (err) { showToast("Gagal Upload", "error"); }
-      finally { setLoading(false); e.target.value = ''; }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  /* ================= 6. HEADER LOGIC (DRILLDOWN) ================= */
+  /* ================= 7. HEADER LOGIC ================= */
   const headerData = useMemo(() => {
     const drilldownMenus = ['Picking', 'Packing', 'Explorer'];
     if (!drilldownMenus.includes(activeMenu) || !data || data.length === 0) return null;
@@ -213,15 +215,12 @@ function App() {
       if (!key) return acc;
       if (!acc[key]) {
         acc[key] = {
-          id: key,
-          display_name: key,
+          id: key, display_name: key,
           sub_name: curr.nama_customer || curr.nama_toko || '-',
-          count: 0,
-          all_closed: true 
+          count: 0, all_closed: true 
         };
       }
       acc[key].count += 1;
-      // Jika ada satu line statusnya bukan 'CLOSE', maka header status jadi OPEN
       if (curr.status !== 'CLOSE' && curr.status !== 'CLOSED') acc[key].all_closed = false;
       return acc;
     }, {});
@@ -233,16 +232,14 @@ function App() {
   }, [selectedBoxHuid, boxOptions]);
 
   const filteredData = (data || []).filter(item => {
-    if (selectedHeader) {
-        return (item.picklist_number === selectedHeader);
-    }
+    if (selectedHeader) return (item.picklist_number === selectedHeader);
     if (!searchTerm) return true;
     const s = searchTerm.toUpperCase();
     return String(item.location_id || item.picklist_number || item.id || '').includes(s) || 
            String(item.artikel || item.product_id || item.sku || '').includes(s);
   });
 
-  /* ================= 7. RENDER UI ================= */
+  /* ================= 8. RENDER UI ================= */
   if (!isLoggedIn) {
     return (
       <div style={loginPage}>
@@ -263,9 +260,10 @@ function App() {
     <div style={mainLayout}>
       <style>{`
         @media print {
+          body { visibility: hidden; }
+          .print-area-thermal { visibility: visible; position: absolute; left: 0; top: 0; width: 10cm; }
           .no-print { display: none !important; }
-          .print-area-thermal { display: block !important; position: absolute; left: 0; top: 0; width: 10cm; }
-          .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
+          .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; visibility: visible; }
           .l-page.last-page { page-break-after: auto !important; }
           .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; border-radius: 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
@@ -274,15 +272,21 @@ function App() {
           .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
           .l-grid-node { border-right: 1.5px solid #000; padding: 3px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
           .l-grid-node:last-child { border-right: none; }
-          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+          .l-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
           .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
           .l-table td { padding: 2px; border: 0.5px solid #ccc; line-height: 1.1; }
+          .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
           .l-red { color: #FF0000; font-weight: bold; }
           .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
         }
         .print-area-thermal { display: none; }
-        .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.7); transform-origin: top center; }
-        .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; position: relative; }
+        .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.75); transform-origin: top center; }
+        .preview-box-render .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
+        .preview-box-render .l-line { height: 2px; background: #000; margin: 1mm 0; }
+        .preview-box-render .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
+        .preview-box-render .l-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+        .preview-box-render .l-red { color: #FF0000; font-weight: bold; }
+        .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
         .header-card:hover { border-color: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
       `}</style>
 
@@ -318,20 +322,13 @@ function App() {
             {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
               <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
             )}
-            {activeMenu === 'Snapshoot' && (
-              <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
-            )}
-            {['1st Count', '2nt Count', 'Snapshoot'].includes(activeMenu) && (
-              <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':'snap'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+            {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
+              <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
             )}
             {activeMenu === 'Print Label' && selectedBoxHuid && (
               <button onClick={() => window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
             )}
-            <button onClick={() => {
-              const ws = XLSX.utils.json_to_sheet(data);
-              const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Data");
-              XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
-            }} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT</button>
+            <button onClick={handleExportExcel} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT WIB</button>
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
         </header>
@@ -343,9 +340,9 @@ function App() {
           </div>
         )}
 
-        {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
+        {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
 
-        {/* --- RENDERER: HEADER MODE --- */}
+        {/* --- RENDERER --- */}
         {headerData && !selectedHeader ? (
            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:15}}>
               {headerData.filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
@@ -355,11 +352,7 @@ function App() {
                       <div style={{fontSize:'0.65rem', color:'#999'}}>{h.sub_name}</div>
                    </div>
                    <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4}}>
-                      <div style={{
-                        fontSize: '0.55rem', padding: '3px 8px', borderRadius: '4px', fontWeight: 900,
-                        background: h.all_closed ? '#dcfce7' : '#fee2e2', 
-                        color: h.all_closed ? '#166534' : '#991b1b'
-                      }}>
+                      <div style={{fontSize: '0.55rem', padding: '3px 8px', borderRadius: '4px', fontWeight: 900, background: h.all_closed ? '#dcfce7' : '#fee2e2', color: h.all_closed ? '#166534' : '#991b1b'}}>
                         {h.all_closed ? 'CLOSED' : 'OPEN'}
                       </div>
                       <div style={{background:'#f5f5f5', padding:'4px 10px', borderRadius:20, fontSize:'0.6rem', fontWeight:800}}>{h.count} LINES</div>
@@ -396,13 +389,12 @@ function App() {
               ))}
             </div>
         ) : (
-            /* --- TABLES AREA: DETAIL VIEW --- */
             <div style={tableWrapper}>
             <table style={tableStyle}>
                 <thead>
                   <tr style={{background:'#fafafa'}}>
                     {activeMenu === 'Master Lokasi' ? (
-                        <><th style={thStyle}><input type="checkbox" onChange={(e) => e.target.checked ? setSelectedRows(data.map(d=>d.unique_id)) : setSelectedRows([]) } /></th><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                        <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
                     ) : activeMenu === 'Reconciliation' ? (
                         <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
                     ) : activeMenu === 'Picking' ? (
@@ -422,7 +414,7 @@ function App() {
                   {filteredData.map((row, i)=>(
                     <tr key={i} style={{borderBottom:'1px solid #eee'}}>
                         {activeMenu === 'Master Lokasi' ? (
-                            <><td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row?.unique_id)} onChange={() => setSelectedRows(p => p.includes(row?.unique_id) ? p.filter(x => x !== row?.unique_id) : [...p, row?.unique_id])} /></td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row?.assign==='open'?'green':'red', fontWeight:800}}>{row?.assign?.toUpperCase()}</td></>
+                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row?.assign==='open'?'green':'red', fontWeight:800}}>{row?.assign?.toUpperCase()}</td></>
                         ) : activeMenu === 'Reconciliation' ? (
                             <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdStyle}>{row?.qty_1st}</td><td style={tdStyle}>{row?.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row?.qty_2nd||row?.qty_1st||0) - Number(row?.qty_snap||0))}</td><td style={tdStyle}>{row?.final_status}</td></>
                         ) : activeMenu === 'Picking' ? (
@@ -431,8 +423,6 @@ function App() {
                             <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.container_number}</td><td style={tdStyle}>{row?.container_type}</td><td style={tdStyle}>{row?.weight_kg}</td><td style={tdStyle}>{row?.status}</td></>
                         ) : activeMenu === 'Explorer' ? (
                             <><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
-                        ) : activeMenu === '1st Count' || activeMenu === '2nt Count' ? (
-                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_1st || row?.qty_2nd || row?.qty}</td><td style={tdStyle}>{formatWIB(row?.scanned_at || row?.timestamp)}</td><td style={tdStyle}>{row?.operator}</td></>
                         ) : (
                             <><td style={tdStyle}>{row?.location_id || row?.unique_id}</td><td style={tdStyle}>{row?.artikel || row?.sku || row?.product_id}</td><td style={tdStyle}>{row?.qty_snap || row?.qty_1st || row?.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                         )}
@@ -444,22 +434,20 @@ function App() {
         )}
       </div>
 
-      <div className="print-area-thermal"><RenderLabelComponent box={currentPrintData} /></div>
+      {/* --- AREA PRINT (HIDDEN ON SCREEN) --- */}
+      <div className="no-screen">
+          <RenderLabelComponent box={currentPrintData} />
+      </div>
 
       {showAddForm && (
         <div style={popupOverlay}>
           <div style={{...popupContent, textAlign:'left', padding:30}}>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW LOKASI</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
             <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
             <div style={{display:'flex', gap:10}}>
                <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
                <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
             </div>
-            <label style={labelStyle}>STATUS</label>
-            <select style={mInput} value={newLoc.assign} onChange={e=>setNewLoc({...newLoc, assign: e.target.value})}>
-              <option value="closed">CLOSED</option>
-              <option value="open">OPEN</option>
-            </select>
             <button onClick={async () => {
               try {
                 await axios.post(`${API_BASE}?action=add_location`, { ...newLoc, location_id: newLoc.id.toUpperCase() });
@@ -482,10 +470,10 @@ const sidebarStyle = (m) => ({ width: m ? '0px' : '200px', display: m ? 'none' :
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 200, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center', fontSize: '0.75rem' });
-const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' };
+const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 220px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
-const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
-const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
+const thStyle = { padding: '10px', fontSize: '0.65rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const tdStyle = { padding: '10px', fontSize: '0.7rem', whiteSpace: 'nowrap' };
 const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
