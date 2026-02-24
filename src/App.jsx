@@ -14,7 +14,7 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (GLOBAL AREA) ================= */
+/* ================= 1. PRINT COMPONENT (GLOBAL) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box || !box.item_details) return null;
   const pages = [];
@@ -40,7 +40,7 @@ const RenderLabelComponent = ({ box }) => {
             <div className="l-grid-node" style={{fontSize:'6pt'}}>{box.alamat_toko || box.address_toko || '-'}</div>
           </div>
           <div className="l-line" />
-          <div style={{fontWeight:900, fontSize:'8pt', padding:'2px'}}>BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
+          <div className="l-content-title">BOX CONTENT ({idx+1}/{pages.length}) <span style={{float:'right'}}>BOX: {box.container_number}</span></div>
           <table className="l-table">
              <thead><tr><th>Artikel</th><th>Qty</th></tr></thead>
              <tbody>
@@ -54,11 +54,11 @@ const RenderLabelComponent = ({ box }) => {
           </table>
           <div className="l-line" style={{marginTop:'auto'}} />
           <div className="l-footer">
-             <div className="l-row"><span>Packer: <b>{box.packer_name || box.scanned_by}</b></span><span>Total: <b>{box.total_pcs_box || box.qty_packed}</b></span></div>
+             <div className="l-row"><span>Pack: <b>{box.packer_name || box.scanned_by}</b></span><span>Total: <b>{box.total_pcs_box || box.qty_packed}</b></span></div>
              <div className="l-row"><span>Tgl: <b>{(box.tanggal_packing || box.scanned_at || '').substring(0,10)}</b></span><span>Berat: <b>{box.weight_kg} KG</b></span></div>
           </div>
           <div className="l-barcode">
-              <div className="sj-label">NO SJ : {box.no_sj}</div>
+              <div className="sj-label">NO SJ : {box.no_sj || box.picklist_number}</div>
               <Barcode value={box.no_sj || box.picklist_number || ''} width={1.6} height={35} fontSize={0} margin={0} />
           </div>
         </div>
@@ -68,7 +68,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (V37 DRILLDOWN EXPLORER) ================= */
+  /* ================= 2. STATE (V38 DRILLDOWN FIX) ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -88,7 +88,7 @@ function App() {
   // Drilldown State
   const [selectedHeader, setSelectedHeader] = useState(null);
 
-  /* Print States */
+  /* Print Integration */
   const [selectedPcb, setSelectedPcb] = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions] = useState([]);
@@ -205,23 +205,24 @@ function App() {
 
   /* ================= 6. HEADER LOGIC (DRILLDOWN) ================= */
   const headerData = useMemo(() => {
-    const drilldownMenus = ['Picking', 'Packing', 'Explorer']; // Recon dihapus dari sini (balik ke list)
-    if (!drilldownMenus.includes(activeMenu)) return null;
+    const drilldownMenus = ['Picking', 'Packing', 'Explorer'];
+    if (!drilldownMenus.includes(activeMenu) || !data || data.length === 0) return null;
 
     const groups = data.reduce((acc, curr) => {
       const key = curr.picklist_number; 
+      if (!key) return acc;
       if (!acc[key]) {
         acc[key] = {
           id: key,
           display_name: key,
           sub_name: curr.nama_customer || curr.nama_toko || '-',
           count: 0,
-          all_closed: true // Logic default true
+          all_closed: true 
         };
       }
       acc[key].count += 1;
       // Jika ada satu line statusnya bukan 'CLOSE', maka header status jadi OPEN
-      if (curr.status !== 'CLOSE') acc[key].all_closed = false;
+      if (curr.status !== 'CLOSE' && curr.status !== 'CLOSED') acc[key].all_closed = false;
       return acc;
     }, {});
     return Object.values(groups);
@@ -283,7 +284,6 @@ function App() {
         .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.7); transform-origin: top center; }
         .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; position: relative; }
         .header-card:hover { border-color: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
-        .status-badge { font-size: 0.55rem; padding: 2px 8px; borderRadius: 4px; fontWeight: 900; position: absolute; top: 10px; right: 10px; }
       `}</style>
 
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
@@ -345,9 +345,9 @@ function App() {
 
         {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
 
-        {/* --- RENDERER: HEADER MODE (OUTBOUND ONLY) --- */}
+        {/* --- RENDERER: HEADER MODE --- */}
         {headerData && !selectedHeader ? (
-           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:15}}>
+           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:15}}>
               {headerData.filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
                 <div key={i} className="header-card" onClick={()=>setSelectedHeader(h.id)}>
                    <div>
@@ -356,7 +356,7 @@ function App() {
                    </div>
                    <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4}}>
                       <div style={{
-                        ...statusBadgeStyle, 
+                        fontSize: '0.55rem', padding: '3px 8px', borderRadius: '4px', fontWeight: 900,
                         background: h.all_closed ? '#dcfce7' : '#fee2e2', 
                         color: h.all_closed ? '#166534' : '#991b1b'
                       }}>
@@ -411,10 +411,8 @@ function App() {
                         <><th style={thStyle}>ID</th><th style={thStyle}>BOX #</th><th style={thStyle}>PICKLIST</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>PACKER</th><th style={thStyle}>TIME</th><th style={thStyle}>DESC</th><th style={thStyle}>HUID</th><th style={thStyle}>CONT #</th><th style={thStyle}>TYPE</th><th style={thStyle}>WEIGHT</th><th style={thStyle}>STATUS</th></>
                     ) : activeMenu === 'Explorer' ? (
                         <><th style={thStyle}>PICKLIST</th><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
-                    ) : activeMenu === '1st Count' ? (
-                        <><th style={thStyle}>LOCATION_ID</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY_1ST</th><th style={thStyle}>TIMESTAMP (WIB)</th><th style={thStyle}>OPERATOR</th></>
-                    ) : activeMenu === '2nt Count' ? (
-                        <><th style={thStyle}>LOCATION_ID</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY_2ND</th><th style={thStyle}>TIMESTAMP (WIB)</th><th style={thStyle}>OPERATOR</th></>
+                    ) : activeMenu === '1st Count' || activeMenu === '2nt Count' ? (
+                        <><th style={thStyle}>LOCATION_ID</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP (WIB)</th><th style={thStyle}>OPERATOR</th></>
                     ) : (
                         <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY</th><th style={thStyle}>DESC</th></>
                     )}
@@ -424,7 +422,7 @@ function App() {
                   {filteredData.map((row, i)=>(
                     <tr key={i} style={{borderBottom:'1px solid #eee'}}>
                         {activeMenu === 'Master Lokasi' ? (
-                            <><td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row?.unique_id)} onChange={() => setSelectedRows(p => p.includes(row?.unique_id) ? p.filter(x => x !== row?.unique_id) : [...p, row?.unique_id])} /></td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row.assign==='open'?'green':'red', fontWeight:800}}>{row?.assign?.toUpperCase()}</td></>
+                            <><td style={tdStyle}><input type="checkbox" checked={selectedRows.includes(row?.unique_id)} onChange={() => setSelectedRows(p => p.includes(row?.unique_id) ? p.filter(x => x !== row?.unique_id) : [...p, row?.unique_id])} /></td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row?.assign==='open'?'green':'red', fontWeight:800}}>{row?.assign?.toUpperCase()}</td></>
                         ) : activeMenu === 'Reconciliation' ? (
                             <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdStyle}>{row?.qty_1st}</td><td style={tdStyle}>{row?.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row?.qty_2nd||row?.qty_1st||0) - Number(row?.qty_snap||0))}</td><td style={tdStyle}>{row?.final_status}</td></>
                         ) : activeMenu === 'Picking' ? (
@@ -478,17 +476,16 @@ function App() {
 export default App;
 
 /* ================= STYLES ================= */
-const statusBadgeStyle = { fontSize: '0.6rem', padding: '3px 10px', borderRadius: '4px', fontWeight: 900 };
 const menuSectionLabel = { padding: '15px 20px 5px', fontSize: '0.55rem', fontWeight: 900, color: '#999', letterSpacing: '1px' };
 const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, color: a ? '#000' : '#ccc', borderBottom: a ? '2px solid #000' : 'none', display: 'flex', alignItems: 'center', gap: 5 });
 const sidebarStyle = (m) => ({ width: m ? '0px' : '200px', display: m ? 'none' : 'block', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 200, padding: m ? '15px' : '30px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center', fontSize: '0.75rem' });
-const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 220px)' };
+const tableWrapper = { border: '1px solid #eee', borderRadius: '4px', overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
-const thStyle = { padding: '10px', fontSize: '0.65rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
-const tdStyle = { padding: '10px', fontSize: '0.7rem', whiteSpace: 'nowrap' };
+const thStyle = { padding: '10px', fontSize: '0.6rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const tdStyle = { padding: '10px', fontSize: '0.65rem', whiteSpace: 'nowrap' };
 const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
 const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
@@ -496,7 +493,7 @@ const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 1
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
-const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' };
+const loginCard = { width: '320px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
