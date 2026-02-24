@@ -14,7 +14,7 @@ import {
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
 
-/* ================= 1. PRINT COMPONENT (STABLE) ================= */
+/* ================= 1. PRINT COMPONENT (GLOBAL AREA) ================= */
 const RenderLabelComponent = ({ box }) => {
   if (!box || !box.item_details) return null;
   const pages = [];
@@ -68,7 +68,7 @@ const RenderLabelComponent = ({ box }) => {
 };
 
 function App() {
-  /* ================= 2. STATE (V39 STABLE) ================= */
+  /* ================= 2. STATE ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -78,6 +78,8 @@ function App() {
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
   const [masterTab, setMasterTab] = useState('grid'); 
   const [data, setData] = useState([]);
+  const [snapData, setSnapData] = useState([]);
+  const [reconCache, setReconCache] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRows, setSelectedRows] = useState([]); 
@@ -98,16 +100,21 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  /* ================= 3. UTILS (CONVERT TIME TO WIB) ================= */
+  /* ================= 3. UTILS (FIXED INVALID DATE) ================= */
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-' || dateStr === 'null') return '-';
+    // Mencegah konversi jika string terlalu pendek (bukan format ISO/Date)
+    if (typeof dateStr === 'string' && dateStr.length < 10) return dateStr;
+    
     try {
-      return new Date(dateStr).toLocaleString('id-ID', { 
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr; // Balikin teks asli kalau gagal parse
+      return d.toLocaleString('id-ID', { 
         timeZone: 'Asia/Jakarta',
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
-    } catch (e) { return '-'; }
+    } catch (e) { return dateStr; }
   };
 
   const showToast = (msg, type = 'success') => {
@@ -120,19 +127,16 @@ function App() {
     return item.description || item.sku_desc || item.desc || item.product_description || '-';
   };
 
-  /* ================= 4. EXCEL EXPORT (WIB VERSION) ================= */
+  /* ================= 4. EXCEL EXPORT (TIMESTAMP ONLY CONVERSION) ================= */
   const handleExportExcel = () => {
-    if (!data || data.length === 0) return showToast("Tidak ada data untuk export", "error");
+    if (!data || data.length === 0) return showToast("Tidak ada data", "error");
     
-    // Proses data agar timestamp menjadi format WIB sebelum di-export
     const exportData = data.map(item => {
       const newItem = { ...item };
-      // Scan semua key yang mengandung kata 'at', 'time', atau 'date'
-      Object.keys(newItem).forEach(key => {
-        const lowerKey = key.toLowerCase();
-        if (lowerKey.includes('at') || lowerKey.includes('time') || lowerKey.includes('date') || lowerKey.includes('stamp')) {
-           newItem[key] = formatWIB(newItem[key]);
-        }
+      // HANYA kolom ini yang boleh kena formatWIB agar location_id dan operator aman
+      const timeKeys = ['scanned_at', 'timestamp', 'tanggal_packing', 'created_at', 'scanned_time'];
+      timeKeys.forEach(key => {
+        if (newItem[key]) newItem[key] = formatWIB(newItem[key]);
       });
       return newItem;
     });
@@ -163,6 +167,8 @@ function App() {
         const res = await axios.get(`${currentAPI}?action=get_data&target=${targetMap[activeMenu]}`);
         setData(res.data?.data || []);
       }
+      axios.get(`${API_BASE}?action=get_data&target=snapshot_list`).then(rs => setSnapData(rs.data?.data || []));
+      axios.get(`${API_BASE}?action=get_data&target=recon`).then(rr => setReconCache(rr.data?.data || []));
     } catch (e) { setData([]); }
     finally { setLoading(false); setSelectedRows([]); }
   };
@@ -175,7 +181,7 @@ function App() {
     try {
       const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
       setBoxOptions(res.data?.data || []);
-    } catch (e) { showToast("Gagal tarik detail box", "error"); }
+    } catch (e) { showToast("Gagal tarik box", "error"); }
     finally { setLoading(false); }
   };
 
@@ -198,6 +204,23 @@ function App() {
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setLoading(true);
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const excelData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        await axios.post(`${API_BASE}?action=upload_snap`, { data: excelData });
+        showToast("Snapshot Terupload!"); fetchData();
+      } catch (err) { showToast("Gagal Upload", "error"); }
+      finally { setLoading(false); e.target.value = ''; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handlePcbChange = (e) => {
     const val = e.target.value;
     setSelectedPcb(val);
@@ -205,7 +228,7 @@ function App() {
     setSelectedBoxHuid('');
   };
 
-  /* ================= 7. HEADER LOGIC ================= */
+  /* ================= 7. HEADER DRILLDOWN LOGIC ================= */
   const headerData = useMemo(() => {
     const drilldownMenus = ['Picking', 'Packing', 'Explorer'];
     if (!drilldownMenus.includes(activeMenu) || !data || data.length === 0) return null;
@@ -260,10 +283,11 @@ function App() {
     <div style={mainLayout}>
       <style>{`
         @media print {
-          body { visibility: hidden; }
-          .print-area-thermal { visibility: visible; position: absolute; left: 0; top: 0; width: 10cm; }
+          body * { visibility: hidden; }
+          .print-area-thermal, .print-area-thermal * { visibility: visible; }
+          .print-area-thermal { position: absolute; left: 0; top: 0; width: 10cm; }
           .no-print { display: none !important; }
-          .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; visibility: visible; }
+          .l-page { width: 10cm; height: 10cm; padding: 1mm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
           .l-page.last-page { page-break-after: auto !important; }
           .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; border-radius: 2px; }
           .l-pt-name { font-weight: 900; font-size: 13pt; }
@@ -272,20 +296,16 @@ function App() {
           .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
           .l-grid-node { border-right: 1.5px solid #000; padding: 3px; font-size: 8pt; font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center; }
           .l-grid-node:last-child { border-right: none; }
-          .l-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+          .l-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
           .l-table th { background: #eee; text-align: left; padding: 2px; border: 0.5px solid #000; }
           .l-table td { padding: 2px; border: 0.5px solid #ccc; line-height: 1.1; }
-          .trunc-cell { max-width: 4cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .trunc-cell { max-width: 4.2cm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
           .l-red { color: #FF0000; font-weight: bold; }
           .l-barcode { text-align: center; margin-top: auto; padding-bottom: 1mm; }
         }
         .print-area-thermal { display: none; }
         .preview-box-render .l-page { width: 10cm; height: 10cm; background: white; border: 1px solid #ddd; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin: 0 auto; display: flex; flex-direction: column; padding: 1mm; transform: scale(0.75); transform-origin: top center; }
         .preview-box-render .u-banner { background: #FF0000; color: #fff; text-align: center; font-size: 8pt; font-weight: bold; padding: 4px; }
-        .preview-box-render .l-line { height: 2px; background: #000; margin: 1mm 0; }
-        .preview-box-render .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.5px solid #000; }
-        .preview-box-render .l-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-        .preview-box-render .l-red { color: #FF0000; font-weight: bold; }
         .header-card { background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
         .header-card:hover { border-color: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
       `}</style>
@@ -322,6 +342,10 @@ function App() {
             {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
               <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
             )}
+            {/* --- BALIKIN TOMBOL UPLOAD SNAPSHOT DISINI --- */}
+            {activeMenu === 'Snapshoot' && (
+              <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
+            )}
             {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
               <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
             )}
@@ -342,7 +366,7 @@ function App() {
 
         {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 10, top: 12, color:'#999'}} /><input placeholder="Cari..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
 
-        {/* --- RENDERER --- */}
+        {/* --- DYNAMIC RENDERER --- */}
         {headerData && !selectedHeader ? (
            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:15}}>
               {headerData.filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
@@ -423,6 +447,8 @@ function App() {
                             <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.container_number}</td><td style={tdStyle}>{row?.container_type}</td><td style={tdStyle}>{row?.weight_kg}</td><td style={tdStyle}>{row?.status}</td></>
                         ) : activeMenu === 'Explorer' ? (
                             <><td style={tdStyle}>{row?.picklist_number}</td><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
+                        ) : activeMenu === '1st Count' || activeMenu === '2nt Count' ? (
+                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_1st || row?.qty_2nd || row?.qty}</td><td style={tdStyle}>{formatWIB(row?.scanned_at || row?.timestamp)}</td><td style={tdStyle}>{row?.operator}</td></>
                         ) : (
                             <><td style={tdStyle}>{row?.location_id || row?.unique_id}</td><td style={tdStyle}>{row?.artikel || row?.sku || row?.product_id}</td><td style={tdStyle}>{row?.qty_snap || row?.qty_1st || row?.qty || 0}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                         )}
@@ -434,10 +460,7 @@ function App() {
         )}
       </div>
 
-      {/* --- AREA PRINT (HIDDEN ON SCREEN) --- */}
-      <div className="no-screen">
-          <RenderLabelComponent box={currentPrintData} />
-      </div>
+      <div className="print-area-thermal"><RenderLabelComponent box={currentPrintData} /></div>
 
       {showAddForm && (
         <div style={popupOverlay}>
@@ -476,6 +499,7 @@ const thStyle = { padding: '10px', fontSize: '0.65rem', color: '#999', borderBot
 const tdStyle = { padding: '10px', fontSize: '0.7rem', whiteSpace: 'nowrap' };
 const tdDescSmall = { padding: '10px', fontSize: '0.65rem', color: '#999' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.75rem', boxSizing: 'border-box' };
+const qtyInput = { ...mInput, fontSize: '1.8rem', fontWeight: 900, textAlign: 'center' };
 const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '6px 12px', borderRadius: '4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '6px', borderRadius: '4px', cursor: 'pointer' };
@@ -486,11 +510,10 @@ const loginHeader = { background: '#000', color: '#fff', padding: '20px' };
 const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
 const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'400px', boxShadow:'0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (t) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: t === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.7rem' });
-const labelStyle = { fontSize: '0.6rem', fontWeight: '800', color: '#999', marginBottom: '5px', display: 'block' };
-const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
-const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
-const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
-const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
 const searchContainer = { position: 'relative', marginBottom: '15px' };
 const searchInput = { width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #eee', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.7rem', boxSizing: 'border-box' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.7rem' };
+const cardGrid = { border: '1px solid #eee', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '4px' };
+const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(80px, 1fr))`, gap: '15px' });
+const toggleContainer = (on) => ({ width: '34px', height: '18px', background: on ? '#000' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
+const toggleCircle = (on) => ({ width: '12px', height: '12px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '19px' : '3px', transition: '0.2s' });
