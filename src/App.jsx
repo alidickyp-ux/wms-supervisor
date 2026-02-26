@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import Barcode from 'react-barcode'; 
 import QRCode from 'react-qr-code';   
+import { PrintLabelPanel } from './PrintLabel';
 import {
   RefreshCw, FileSpreadsheet, Trash2, LogOut, Upload, Search,
   ChevronLeft, ClipboardCheck, PackageCheck, BarChart3, Download,
@@ -339,9 +340,6 @@ function App() {
             {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
               <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
             )}
-            {activeMenu === 'Print Label' && selectedBoxHuid && (
-              <button onClick={() => window.print()} style={{...btnWhite, background:'#800000', color:'#fff'}}><Printer size={12}/> PRINT NOW</button>
-            )}
             <button onClick={handleExportExcel} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT WIB</button>
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
           </div>
@@ -385,25 +383,17 @@ function App() {
                 </div>
               ))}
            </div>
-        ) : activeMenu === 'Print Label' ? (
-            <div style={{display:'flex', gap:25}}>
-              <div style={{flex:1}}>
-                  <label style={labelStyle}>1. PILIH PCB:</label>
-                  <select style={mInput} value={selectedPcb} onChange={(e) => { setSelectedPcb(e.target.value); fetchBoxByPcb(e.target.value); setSelectedBoxHuid(''); }}>
-                    <option value="">-- PCB --</option>
-                    {[...new Set(data.map(b => b.picklist_number))].map((p, i) => <option key={i} value={p}>{p}</option>)}
-                  </select>
-                  <label style={labelStyle}>2. PILIH BOX:</label>
-                  <select style={mInput} value={selectedBoxHuid} disabled={!selectedPcb} onChange={e=>setSelectedBoxHuid(e.target.value)}>
-                    <option value="">-- BOX --</option>
-                    {boxOptions.map((b, i)=>(<option key={i} value={b.huid}>BOX {b.container_number} ({b.huid})</option>))}
-                  </select>
-                  {currentPrintData && <div style={boxInfo}><b>HUID:</b> {currentPrintData?.huid}<br/><b>Status:</b> Ready to Print</div>}
-              </div>
-              <div style={{flex:1.5, background:'#f5f5f5', padding:30, borderRadius:12, display:'flex', justifyContent:'center'}} className="preview-box-render">
-                  <RenderLabelComponent box={currentPrintData} />
-              </div>
-            </div>
+) : activeMenu === 'Print Label' ? (
+  <PrintLabelPanel
+    data={data}
+    selectedPcb={selectedPcb}
+    setSelectedPcb={setSelectedPcb}
+    selectedBoxHuid={selectedBoxHuid}
+    setSelectedBoxHuid={setSelectedBoxHuid}
+    boxOptions={boxOptions}
+    fetchBoxByPcb={fetchBoxByPcb}
+    loading={loading}
+  />
         ) : activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
             <div style={gridContainer()}>
               {filteredData.map((row, idx) => (
