@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import Barcode from 'react-barcode'; 
-import QRCode from 'react-qr-code';   
 import { PrintLabelPanel } from './PrintLabel';
 import {
   RefreshCw, FileSpreadsheet, Trash2, LogOut, Upload, Search,
@@ -13,80 +11,23 @@ import {
 
 /* --- API ENDPOINTS --- */
 const API_BASE = 'https://wms-neon-bridge.vercel.app/api/inventory';
-const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web'; 
-
-/* ================= 1. PRINT COMPONENT (PRECISION 10x10) ================= */
-const RenderLabelComponent = ({ box }) => {
-  if (!box || !box.item_details) return null;
-  const pages = [];
-  const items = box.item_details || [];
-  for (let i = 0; i < items.length; i += 12) pages.push(items.slice(i, i + 12));
-
-  return (
-    <div className="print-area-thermal">
-      {pages.map((pItems, idx) => (
-        <div key={idx} className={`l-page ${idx === pages.length - 1 ? 'last-page' : ''}`}>
-          <div className="u-banner">WAJIB VIDEO UNBOXING - KOMPLAIN TANPA VIDEO TIDAK DILAYANI</div>
-          <div className="l-header">
-             <div className="pt-info">
-                <div className="l-pt-name">PT DUA PULUH TIGA</div>
-                <div className="l-pt-addr">Jl. kopo Bihbul Raya no 68, Bandung</div>
-             </div>
-             <div className="huid-info">
-                <div className="l-huid-label">HUID: <b>{box.huid}</b></div>
-                <QRCode value={box.huid || ''} size={45} level="H" />
-             </div>
-          </div>
-          <div className="l-line" />
-          <div className="l-grid">
-            <div className="l-grid-node"><b>{box.picklist_number}</b></div>
-            <div className="l-grid-node"><b>{box.nama_toko || '-'}</b></div>
-            <div className="l-grid-node" style={{fontSize:'6pt'}}>{box.alamat_toko || '-'}</div>
-          </div>
-          <div className="l-line" />
-          <div className="box-content-title">BOX CONTENT <span style={{float:'right'}}>BOX: {box.container_number || '1'} ({idx+1}/{pages.length})</span></div>
-          <table className="l-table">
-             <thead><tr><th>Artikel</th><th>Description</th><th>Qty</th></tr></thead>
-             <tbody>
-                {pItems.map((it, k) => (
-                  <tr key={k}>
-                    <td style={{width:'30%'}}>{it?.sku}</td>
-                    <td style={{width:'60%'}} className="trunc-cell">{it?.nama_item || it?.name || '-'}</td>
-                    <td style={{width:'10%', textAlign:'center'}}>{it?.qty}</td>
-                  </tr>
-                ))}
-             </tbody>
-          </table>
-          <div className="l-line" style={{marginTop:'auto'}} />
-          <div className="l-footer">
-             <div className="l-row"><span>Packer: <b>{box.packer_name || '-'}</b></span><span>Total: <b>{box.total_pcs_box || 0} PCS</b></span></div>
-             <div className="l-row"><span>Tgl: <b>{box.tanggal_packing?.substring(0,10)}</b></span><span>Berat: <b>{box.weight_kg || '0'} KG</b></span></div>
-          </div>
-          <div className="l-barcode">
-              <div className="sj-label">NO SJ: {box.no_sj || box.picklist_number}</div>
-              <Barcode value={box.no_sj || box.picklist_number || ''} width={1.6} height={35} fontSize={0} margin={0} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
+const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web';
 
 function App() {
-  /* ================= 2. STATE (V45 RESTORED) ================= */
+  /* ================= 2. STATE ================= */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  
+
   const [activeMenu, setActiveMenu] = useState('Master Lokasi');
-  const [masterTab, setMasterTab] = useState('grid'); 
+  const [masterTab, setMasterTab] = useState('grid');
   const [explorerTab, setExplorerTab] = useState('active');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRows, setSelectedRows] = useState([]); 
+  const [selectedRows, setSelectedRows] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLoc, setNewLoc] = useState({ id: '', zone: '', aisle: '', unique: '', assign: 'closed' });
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
@@ -148,7 +89,7 @@ function App() {
   const fetchData = async () => {
     if (!isLoggedIn) return;
     setLoading(true);
-    setSelectedHeader(null); 
+    setSelectedHeader(null);
     try {
       if (activeMenu === 'Print Label') {
         const res = await axios.get(`${API_OUTBOUND}?target=packing_transactions`);
@@ -208,12 +149,11 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  // --- TOGGLE ASSIGN RESTORED ---
   const handleToggle = async (uid, currentStatus) => {
     const nextStatus = currentStatus === 'open' ? 'closed' : 'open';
     try {
       await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: nextStatus });
-      setData(prev => prev.map(item => item.unique_id === uid ? {...item, assign: nextStatus} : item));
+      setData(prev => prev.map(item => item.unique_id === uid ? { ...item, assign: nextStatus } : item));
     } catch (e) { showToast("Gagal Toggle", "error"); }
   };
 
@@ -226,11 +166,11 @@ function App() {
       const key = curr.picklist_number;
       if (!key) return acc;
       if (!acc[key]) {
-        acc[key] = { 
-          id: key, 
-          name: curr.nama_customer || curr.nama_toko || '-', 
-          count: 0, 
-          allPacked: true 
+        acc[key] = {
+          id: key,
+          name: curr.nama_customer || curr.nama_toko || '-',
+          count: 0,
+          allPacked: true
         };
       }
       acc[key].count++;
@@ -240,24 +180,20 @@ function App() {
 
     const results = Object.values(groups);
     if (activeMenu === 'Explorer') {
-        return {
-          active: results.filter(h => !h.allPacked),
-          completed: results.filter(h => h.allPacked)
-        };
+      return {
+        active: results.filter(h => !h.allPacked),
+        completed: results.filter(h => h.allPacked)
+      };
     }
     return results;
   }, [data, activeMenu]);
-
-  const currentPrintData = useMemo(() => {
-    return boxOptions.find(b => b.huid === selectedBoxHuid) || null;
-  }, [selectedBoxHuid, boxOptions]);
 
   const filteredData = (data || []).filter(item => {
     if (selectedHeader) return (item.picklist_number === selectedHeader);
     if (!searchTerm) return true;
     const s = searchTerm.toUpperCase();
-    return String(item.location_id || item.picklist_number || item.id || '').includes(s) || 
-           String(item.artikel || item.product_id || item.sku || '').includes(s);
+    return String(item.location_id || item.picklist_number || item.id || '').includes(s) ||
+      String(item.artikel || item.product_id || item.sku || '').includes(s);
   });
 
   /* ================= 7. RENDER DASHBOARD ================= */
@@ -266,10 +202,10 @@ function App() {
       <div style={loginPage}>
         <div style={loginCard}>
           <div style={loginHeader}><h2>COOL DASHBOARD</h2><p>WMS MANAGEMENT</p></div>
-          <div style={{padding:'30px'}}>
-            <input placeholder="Username" style={mInput} value={username} onChange={e=>setUsername(e.target.value)} />
-            <input type="password" placeholder="Password" style={mInput} value={password} onChange={e=>setPassword(e.target.value)} />
-            <button onClick={handleLogin} style={btnBlack}>{loginLoading ? <Loader2 className="animate-spin" size={18}/> : "LOGIN"}</button>
+          <div style={{ padding: '30px' }}>
+            <input placeholder="Username" style={mInput} value={username} onChange={e => setUsername(e.target.value)} />
+            <input type="password" placeholder="Password" style={mInput} value={password} onChange={e => setPassword(e.target.value)} />
+            <button onClick={handleLogin} style={btnBlack}>{loginLoading ? <Loader2 className="animate-spin" size={18} /> : "LOGIN"}</button>
           </div>
         </div>
       </div>
@@ -279,27 +215,6 @@ function App() {
   return (
     <div style={mainLayout}>
       <style>{`
-        @media print {
-          @page { size: 10cm 10cm; margin: 0; }
-          body * { visibility: hidden; }
-          .print-area-thermal, .print-area-thermal * { visibility: visible; }
-          .print-area-thermal { position: absolute; left: 0; top: 0; width: 10cm; display: block !important; }
-          .l-page { width: 10cm; height: 10cm; padding: 0.2cm; box-sizing: border-box; page-break-after: always; background: white; font-family: sans-serif; display: flex; flex-direction: column; }
-          .l-page.last-page { page-break-after: avoid !important; }
-          .u-banner { background: #FF0000 !important; -webkit-print-color-adjust: exact; color: #fff !important; text-align: center; font-size: 7.5pt; font-weight: bold; padding: 4px; }
-          .l-header { display: flex; justify-content: space-between; padding: 4px 2px; }
-          .l-pt-name { font-weight: 900; font-size: 11pt; }
-          .l-pt-addr { font-size: 6.5pt; line-height: 1.1; }
-          .l-line { height: 1.5px; background: #000; margin: 1mm 0; }
-          .l-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; border: 1.2px solid #000; }
-          .l-grid-node { border-right: 1.2px solid #000; padding: 3px; font-size: 7.5pt; font-weight: bold; text-align: center; }
-          .l-grid-node:last-child { border-right: none; }
-          .l-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
-          .l-table th { background: #eee !important; -webkit-print-color-adjust: exact; text-align: left; border: 0.8px solid #000; padding: 2px; }
-          .l-table td { border: 0.8px solid #333; padding: 2px; }
-          .l-barcode { text-align: center; margin-top: auto; }
-        }
-        .print-area-thermal { display: none; }
         .header-card { background: #fff; border: 1px solid #eee; padding: 18px; border-radius: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; }
         .header-card:hover { border-color: #000; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .tab-btn { padding: 10px 24px; font-size: 0.75rem; font-weight: 800; border: none; background: #f5f5f5; cursor: pointer; border-radius: 8px; }
@@ -307,11 +222,11 @@ function App() {
       `}</style>
 
       {toast.show && <div style={toastStyle(toast.type)}>{toast.msg}</div>}
-      
-      <nav style={sidebarStyle(isMobile)} className="no-print">
+
+      <nav style={sidebarStyle(isMobile)}>
         <div style={{ padding: '20px 20px 10px' }}>
-            <div style={{ fontWeight: 900, fontSize: '1rem' }}>COOL DASHBOARD</div>
-            <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 800, marginTop: 4 }}>👤 {user?.full_name}</div>
+          <div style={{ fontWeight: 900, fontSize: '1rem' }}>COOL DASHBOARD</div>
+          <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 800, marginTop: 4 }}>👤 {user?.full_name}</div>
         </div>
         <div style={menuSectionLabel}>INVENTORY</div>
         {['Master Lokasi', 'Snapshoot', '1st Count', '2nt Count', 'Reconciliation'].map(m => (
@@ -319,155 +234,162 @@ function App() {
         ))}
         <div style={menuSectionLabel}>OUTBOUND</div>
         {['Picking', 'Packing', 'Explorer', 'Print Label'].map(m => (
-          <div key={m} onClick={() => setActiveMenu(m)} style={navItem(activeMenu === m)}><Printer size={14} style={{marginRight:8}}/> {m}</div>
+          <div key={m} onClick={() => setActiveMenu(m)} style={navItem(activeMenu === m)}><Printer size={14} style={{ marginRight: 8 }} /> {m}</div>
         ))}
         <button onClick={() => setIsLoggedIn(false)} style={btnLogout}><LogOut size={14} /></button>
       </nav>
 
-      <div style={contentArea(isMobile)} className="no-print">
+      <div style={contentArea(isMobile)}>
         <header style={headerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {selectedHeader && <button onClick={()=>setSelectedHeader(null)} style={btnIcon}><ArrowLeft size={16}/></button>}
-            <div style={{ fontWeight: '800', fontSize:'1.1rem' }}>{selectedHeader ? `${activeMenu}: ${selectedHeader}` : activeMenu.toUpperCase()}</div>
+            {selectedHeader && <button onClick={() => setSelectedHeader(null)} style={btnIcon}><ArrowLeft size={16} /></button>}
+            <div style={{ fontWeight: '800', fontSize: '1.1rem' }}>{selectedHeader ? `${activeMenu}: ${selectedHeader}` : activeMenu.toUpperCase()}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {activeMenu === 'Master Lokasi' && masterTab === 'database' && (
-              <button onClick={()=>setShowAddForm(true)} style={{...btnWhite, background:'#000', color:'#fff'}}><Plus size={12}/> ADD NEW</button>
+              <button onClick={() => setShowAddForm(true)} style={{ ...btnWhite, background: '#000', color: '#fff' }}><Plus size={12} /> ADD NEW</button>
             )}
             {activeMenu === 'Snapshoot' && (
-              <label style={{...btnWhite, background:'#000', color:'#fff', cursor:'pointer'}}><Upload size={12}/> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload}/></label>
+              <label style={{ ...btnWhite, background: '#000', color: '#fff', cursor: 'pointer' }}><Upload size={12} /> UPLOAD SNAP <input type="file" hidden onChange={handleFileUpload} /></label>
             )}
             {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
-              <button onClick={() => { if(window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`).then(()=>fetchData()); }} style={{...btnWhite, color:'red'}}><Trash2 size={12}/> CLEAR</button>
+              <button onClick={() => { if (window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st') ? 'first' : activeMenu.includes('2nt') ? 'second' : activeMenu.includes('Snap') ? 'snap' : 'recon'}`).then(() => fetchData()); }} style={{ ...btnWhite, color: 'red' }}><Trash2 size={12} /> CLEAR</button>
             )}
-            <button onClick={handleExportExcel} style={{...btnWhite, color:'#16a34a'}}><FileSpreadsheet size={12}/> EXPORT WIB</button>
-            <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading?'animate-spin':''}/></button>
+            <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12} /> EXPORT WIB</button>
+            <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>
         </header>
 
         {activeMenu === 'Explorer' && !selectedHeader && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-            <button className={`tab-btn ${explorerTab === 'active' ? 'active' : ''}`} onClick={()=>setExplorerTab('active')}>ACTIVE PICKLIST</button>
-            <button className={`tab-btn ${explorerTab === 'completed' ? 'active' : ''}`} onClick={()=>setExplorerTab('completed')}>COMPLETED (CLOSE)</button>
+            <button className={`tab-btn ${explorerTab === 'active' ? 'active' : ''}`} onClick={() => setExplorerTab('active')}>ACTIVE PICKLIST</button>
+            <button className={`tab-btn ${explorerTab === 'completed' ? 'active' : ''}`} onClick={() => setExplorerTab('completed')}>COMPLETED (CLOSE)</button>
           </div>
         )}
 
         {activeMenu === 'Master Lokasi' && (
-          <div style={{display:'flex', gap:15, marginBottom:20, borderBottom:'1px solid #eee'}}>
-            <div onClick={()=>setMasterTab('grid')} style={tabItem(masterTab === 'grid')}><LayoutGrid size={14}/> ASSIGN CC</div>
-            <div onClick={()=>setMasterTab('database')} style={tabItem(masterTab === 'database')}><DbIcon size={14}/> DATABASE LOKASI</div>
+          <div style={{ display: 'flex', gap: 15, marginBottom: 20, borderBottom: '1px solid #eee' }}>
+            <div onClick={() => setMasterTab('grid')} style={tabItem(masterTab === 'grid')}><LayoutGrid size={14} /> ASSIGN CC</div>
+            <div onClick={() => setMasterTab('database')} style={tabItem(masterTab === 'database')}><DbIcon size={14} /> DATABASE LOKASI</div>
           </div>
         )}
 
-        {!selectedHeader && <div style={searchContainer}><Search size={14} style={{position:'absolute', left: 12, top: 14, color:'#999'}} /><input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>}
+        {!selectedHeader && activeMenu !== 'Print Label' && (
+          <div style={searchContainer}>
+            <Search size={14} style={{ position: 'absolute', left: 12, top: 14, color: '#999' }} />
+            <input placeholder="Cari data..." style={searchInput} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
+        )}
 
         {/* --- DYNAMIC RENDERER --- */}
         {activeMenu === 'Explorer' && !selectedHeader ? (
-           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(350px, 1fr))', gap:20}}>
-              {headerData[explorerTab].filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
-                <div key={i} className="header-card" onClick={()=>setSelectedHeader(h.id)}>
-                   <div><div style={{fontWeight:900, fontSize:'0.9rem'}}>{h.id}</div><div style={{fontSize:'0.7rem', color:'#999'}}>{h.name}</div></div>
-                   <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6}}>
-                      <div style={{fontSize:'0.55rem', padding:'3px 10px', borderRadius:4, fontWeight:900, background:h.allPacked?'#dcfce7':'#fee2e2', color:h.allPacked?'#166534':'#991b1b'}}>{h.allPacked?'CLOSE':'OPEN'}</div>
-                      <div style={{background:'#f5f5f5', padding:'4px 10px', borderRadius:20, fontSize:'0.65rem', fontWeight:800}}>{h.count} LINES</div>
-                   </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 20 }}>
+            {headerData[explorerTab].filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
+              <div key={i} className="header-card" onClick={() => setSelectedHeader(h.id)}>
+                <div><div style={{ fontWeight: 900, fontSize: '0.9rem' }}>{h.id}</div><div style={{ fontSize: '0.7rem', color: '#999' }}>{h.name}</div></div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <div style={{ fontSize: '0.55rem', padding: '3px 10px', borderRadius: 4, fontWeight: 900, background: h.allPacked ? '#dcfce7' : '#fee2e2', color: h.allPacked ? '#166534' : '#991b1b' }}>{h.allPacked ? 'CLOSE' : 'OPEN'}</div>
+                  <div style={{ background: '#f5f5f5', padding: '4px 10px', borderRadius: 20, fontSize: '0.65rem', fontWeight: 800 }}>{h.count} LINES</div>
                 </div>
-              ))}
-           </div>
+              </div>
+            ))}
+          </div>
         ) : ['Picking', 'Packing'].includes(activeMenu) && !selectedHeader ? (
-           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(350px, 1fr))', gap:20}}>
-              {headerData.filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
-                <div key={i} className="header-card" onClick={()=>setSelectedHeader(h.id)}>
-                   <div><div style={{fontWeight:900, fontSize:'0.9rem'}}>{h.id}</div><div style={{fontSize:'0.7rem', color:'#999'}}>{h.name}</div></div>
-                   <div style={{background:'#f5f5f5', padding:'4px 12px', borderRadius:20, fontSize:'0.65rem', fontWeight:800}}>{h.count} ITEMS</div>
-                </div>
-              ))}
-           </div>
-) : activeMenu === 'Print Label' ? (
-  <PrintLabelPanel
-    data={data}
-    selectedPcb={selectedPcb}
-    setSelectedPcb={setSelectedPcb}
-    selectedBoxHuid={selectedBoxHuid}
-    setSelectedBoxHuid={setSelectedBoxHuid}
-    boxOptions={boxOptions}
-    fetchBoxByPcb={fetchBoxByPcb}
-    loading={loading}
-  />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 20 }}>
+            {headerData.filter(h => h.id.toUpperCase().includes(searchTerm.toUpperCase())).map((h, i) => (
+              <div key={i} className="header-card" onClick={() => setSelectedHeader(h.id)}>
+                <div><div style={{ fontWeight: 900, fontSize: '0.9rem' }}>{h.id}</div><div style={{ fontSize: '0.7rem', color: '#999' }}>{h.name}</div></div>
+                <div style={{ background: '#f5f5f5', padding: '4px 12px', borderRadius: 20, fontSize: '0.65rem', fontWeight: 800 }}>{h.count} ITEMS</div>
+              </div>
+            ))}
+          </div>
+        ) : activeMenu === 'Print Label' ? (
+          <PrintLabelPanel
+            data={data}
+            selectedPcb={selectedPcb}
+            setSelectedPcb={setSelectedPcb}
+            selectedBoxHuid={selectedBoxHuid}
+            setSelectedBoxHuid={setSelectedBoxHuid}
+            boxOptions={boxOptions}
+            fetchBoxByPcb={fetchBoxByPcb}
+            loading={loading}
+          />
         ) : activeMenu === 'Master Lokasi' && masterTab === 'grid' ? (
-            <div style={gridContainer()}>
-              {filteredData.map((row, idx) => (
-                <div key={idx} style={cardGrid}>
-                  <span style={{ fontWeight: 800, marginBottom: 8 }}>{row?.unique_id}</span>
-                  <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
-                </div>
-              ))}
-            </div>
+          <div style={gridContainer()}>
+            {filteredData.map((row, idx) => (
+              <div key={idx} style={cardGrid}>
+                <span style={{ fontWeight: 800, marginBottom: 8 }}>{row?.unique_id}</span>
+                <div onClick={() => handleToggle(row.unique_id, row.assign)} style={toggleContainer(row.assign === 'open')}><div style={toggleCircle(row.assign === 'open')} /></div>
+              </div>
+            ))}
+          </div>
         ) : (
-            <div style={tableWrapper}>
+          <div style={tableWrapper}>
             <table style={tableStyle}>
-                <thead>
-                  <tr style={{background:'#fafafa'}}>
+              <thead>
+                <tr style={{ background: '#fafafa' }}>
+                  {activeMenu === 'Master Lokasi' ? (
+                    <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                  ) : activeMenu === 'Reconciliation' ? (
+                    <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
+                  ) : activeMenu === 'Picking' ? (
+                    <><th style={thStyle}>ID</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>PICKER</th><th style={thStyle}>TIME</th><th style={thStyle}>STATUS</th></>
+                  ) : activeMenu === 'Packing' ? (
+                    <><th style={thStyle}>ID</th><th style={thStyle}>BOX #</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>PACKER</th><th style={thStyle}>TIME</th><th style={thStyle}>HUID</th><th style={thStyle}>STATUS</th></>
+                  ) : activeMenu === 'Explorer' ? (
+                    <><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
+                  ) : activeMenu === 'Snapshoot' ? (
+                    <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY_SNAP</th><th style={thStyle}>DESCRIPTION</th></>
+                  ) : (
+                    <><th style={thStyle}>LOCATION_ID</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP (WIB)</th><th style={thStyle}>OPERATOR</th></>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.map((row, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                     {activeMenu === 'Master Lokasi' ? (
-                        <><th style={thStyle}>LOKASI</th><th style={thStyle}>ZONE</th><th style={thStyle}>AISLE</th><th style={thStyle}>UNIQUE</th><th style={thStyle}>STATUS</th></>
+                      <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{ ...tdStyle, color: row?.assign === 'open' ? 'green' : 'red', fontWeight: 800 }}>{row?.assign?.toUpperCase()}</td></>
                     ) : activeMenu === 'Reconciliation' ? (
-                        <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>SNAP</th><th style={thStyle}>1ST</th><th style={thStyle}>2ND</th><th style={thStyle}>DIFF</th><th style={thStyle}>STATUS</th></>
+                      <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdStyle}>{row?.qty_1st}</td><td style={tdStyle}>{row?.qty_2nd}</td><td style={{ ...tdStyle, color: 'red', fontWeight: 900 }}>{(Number(row?.qty_2nd || row?.qty_1st || 0) - Number(row?.qty_snap || 0))}</td><td style={tdStyle}>{row?.final_status}</td></>
                     ) : activeMenu === 'Picking' ? (
-                        <><th style={thStyle}>ID</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>LOC</th><th style={thStyle}>QTY</th><th style={thStyle}>PICKER</th><th style={thStyle}>TIME</th><th style={thStyle}>STATUS</th></>
+                      <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.qty_actual}</td><td style={tdStyle}>{row?.picker_name}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdStyle}>{row?.status}</td></>
                     ) : activeMenu === 'Packing' ? (
-                        <><th style={thStyle}>ID</th><th style={thStyle}>BOX #</th><th style={thStyle}>PRODUCT</th><th style={thStyle}>QTY</th><th style={thStyle}>PACKER</th><th style={thStyle}>TIME</th><th style={thStyle}>HUID</th><th style={thStyle}>STATUS</th></>
+                      <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.status}</td></>
                     ) : activeMenu === 'Explorer' ? (
-                        <><th style={thStyle}>SKU</th><th style={thStyle}>DESC</th><th style={thStyle}>REQ</th><th style={thStyle}>PICK</th><th style={thStyle}>PACK</th><th style={thStyle}>STATUS</th></>
+                      <><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
                     ) : activeMenu === 'Snapshoot' ? (
-                        <><th style={thStyle}>LOKASI</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>QTY_SNAP</th><th style={thStyle}>DESCRIPTION</th></>
+                      <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
                     ) : (
-                        <><th style={thStyle}>LOCATION_ID</th><th style={thStyle}>ARTIKEL</th><th style={thStyle}>DESCRIPTION</th><th style={thStyle}>QTY</th><th style={thStyle}>TIMESTAMP (WIB)</th><th style={thStyle}>OPERATOR</th></>
+                      <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_1st || row?.qty_2nd || row?.qty}</td><td style={tdStyle}>{formatWIB(row?.scanned_at || row?.timestamp)}</td><td style={tdStyle}>{row?.operator}</td></>
                     )}
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredData.map((row, i)=>(
-                    <tr key={i} style={{borderBottom:'1px solid #eee'}}>
-                        {activeMenu === 'Master Lokasi' ? (
-                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.zone}</td><td style={tdStyle}>{row?.aisle}</td><td style={tdStyle}>{row?.unique_id}</td><td style={{...tdStyle, color:row?.assign==='open'?'green':'red', fontWeight:800}}>{row?.assign?.toUpperCase()}</td></>
-                        ) : activeMenu === 'Reconciliation' ? (
-                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdStyle}>{row?.qty_1st}</td><td style={tdStyle}>{row?.qty_2nd}</td><td style={{...tdStyle, color:'red', fontWeight:900}}>{(Number(row?.qty_2nd||row?.qty_1st||0) - Number(row?.qty_snap||0))}</td><td style={tdStyle}>{row?.final_status}</td></>
-                        ) : activeMenu === 'Picking' ? (
-                            <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.qty_actual}</td><td style={tdStyle}>{row?.picker_name}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdStyle}>{row?.status}</td></>
-                        ) : activeMenu === 'Packing' ? (
-                            <><td style={tdStyle}>{row?.id}</td><td style={tdStyle}>{row?.box_number}</td><td style={tdStyle}>{row?.product_id}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.scanned_by}</td><td style={tdStyle}>{formatWIB(row?.scanned_at)}</td><td style={tdStyle}>{row?.huid}</td><td style={tdStyle}>{row?.status}</td></>
-                        ) : activeMenu === 'Explorer' ? (
-                            <><td style={tdStyle}>{row?.sku}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_req}</td><td style={tdStyle}>{row?.qty_picked}</td><td style={tdStyle}>{row?.qty_packed}</td><td style={tdStyle}>{row?.status}</td></>
-                        ) : activeMenu === 'Snapshoot' ? (
-                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdStyle}>{row?.qty_snap}</td><td style={tdDescSmall}>{getDesc(row)}</td></>
-                        ) : (
-                            <><td style={tdStyle}>{row?.location_id}</td><td style={tdStyle}>{row?.artikel}</td><td style={tdDescSmall}>{getDesc(row)}</td><td style={tdStyle}>{row?.qty_1st || row?.qty_2nd || row?.qty}</td><td style={tdStyle}>{formatWIB(row?.scanned_at || row?.timestamp)}</td><td style={tdStyle}>{row?.operator}</td></>
-                        )}
-                    </tr>
-                  ))}
-                </tbody>
+                ))}
+              </tbody>
             </table>
-            </div>
+          </div>
         )}
       </div>
 
-      <div className="print-area-thermal"><RenderLabelComponent box={currentPrintData} /></div>
-
       {showAddForm && (
         <div style={popupOverlay}>
-          <div style={{...popupContent, textAlign:'left', padding:30}}>
-            <div style={{display:'flex', justifyContent:'space-between', marginBottom:15}}><h3 style={{fontWeight:900}}>ADD NEW</h3><button onClick={()=>setShowAddForm(false)} style={{border:'none', background:'none'}}><X size={20}/></button></div>
-            <label style={labelStyle}>LOKASI ID</label><input style={mInput} value={newLoc.id} onChange={e=>setNewLoc({...newLoc, id: e.target.value})} />
-            <div style={{display:'flex', gap:10}}>
-               <div style={{flex:1}}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc, zone: e.target.value.toUpperCase()})} /></div>
-               <div style={{flex:1}}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc, aisle: e.target.value})} /></div>
+          <div style={{ ...popupContent, textAlign: 'left', padding: 30 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 15 }}>
+              <h3 style={{ fontWeight: 900 }}>ADD NEW</h3>
+              <button onClick={() => setShowAddForm(false)} style={{ border: 'none', background: 'none' }}><X size={20} /></button>
+            </div>
+            <label style={labelStyle}>LOKASI ID</label>
+            <input style={mInput} value={newLoc.id} onChange={e => setNewLoc({ ...newLoc, id: e.target.value })} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1 }}><label style={labelStyle}>ZONE</label><input style={mInput} value={newLoc.zone} onChange={e => setNewLoc({ ...newLoc, zone: e.target.value.toUpperCase() })} /></div>
+              <div style={{ flex: 1 }}><label style={labelStyle}>AISLE</label><input style={mInput} type="number" value={newLoc.aisle} onChange={e => setNewLoc({ ...newLoc, aisle: e.target.value })} /></div>
             </div>
             <button onClick={async () => {
               try {
                 await axios.post(`${API_BASE}?action=add_location`, { ...newLoc, location_id: newLoc.id.toUpperCase() });
                 showToast("Added!"); setShowAddForm(false); fetchData();
               } catch (e) { showToast("Error!", "error"); }
-            }} style={{...btnBlack, marginTop:10}}>SAVE LOCATION</button>
+            }} style={{ ...btnBlack, marginTop: 10 }}>SAVE LOCATION</button>
           </div>
         </div>
       )}
@@ -483,29 +405,28 @@ const tabItem = (a) => ({ padding: '10px 15px', cursor: 'pointer', fontSize: '0.
 const sidebarStyle = (m) => ({ width: m ? '0px' : '220px', display: m ? 'none' : 'block', borderRight: '1px solid #eee', height: '100vh', position: 'fixed', backgroundColor: '#fff', zIndex: 10 });
 const contentArea = (m) => ({ flex: 1, marginLeft: m ? 0 : 220, padding: m ? '15px' : '35px' });
 const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', borderBottom: '1px solid #eee', paddingBottom: '15px' };
-const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display:'flex', alignItems:'center', fontSize: '0.75rem' });
+const navItem = (a) => ({ padding: '12px 20px', cursor: 'pointer', color: a ? '#000' : '#ccc', fontWeight: a ? '800' : '400', display: 'flex', alignItems: 'center', fontSize: '0.75rem' });
 const tableWrapper = { border: '1px solid #eee', borderRadius: '8px', overflowY: 'auto', maxHeight: 'calc(100vh - 240px)' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', textAlign: 'left' };
 const thStyle = { padding: '12px 15px', fontSize: '0.65rem', color: '#999', borderBottom: '1px solid #eee', textTransform: 'uppercase', whiteSpace: 'nowrap' };
 const tdStyle = { padding: '12px 15px', fontSize: '0.7rem', whiteSpace: 'nowrap' };
 const tdDescSmall = { padding: '12px 15px', fontSize: '0.65rem', color: '#999' };
 const mInput = { width: '100%', padding: '12px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '8px', fontFamily: 'Lexend', fontSize: '0.8rem', boxSizing: 'border-box' };
-const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' };
+const btnBlack = { width: '100%', background: '#000', color: '#fff', padding: '14px', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const btnWhite = { background: '#fff', border: '1px solid #eee', padding: '8px 16px', borderRadius: '6px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' };
 const btnIcon = { background: '#fff', border: '1px solid #eee', padding: '8px', borderRadius: '6px', cursor: 'pointer' };
 const btnLogout = { position: 'absolute', bottom: 20, width: '100%', border: 'none', background: 'none', color: 'red', fontWeight: 800 };
 const loginPage = { height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' };
-const loginCard = { width: '340px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow:'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' };
+const loginCard = { width: '340px', background: '#fff', border: '1px solid #eee', borderRadius: '12px', textAlign: 'center', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' };
 const loginHeader = { background: '#000', color: '#fff', padding: '25px' };
-const popupOverlay = { position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:10000 };
-const popupContent = { background:'#fff', padding:40, borderRadius:24, textAlign:'center', width:'85%', maxWidth:'450px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' };
+const popupOverlay = { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 };
+const popupContent = { background: '#fff', padding: 40, borderRadius: 24, textAlign: 'center', width: '85%', maxWidth: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' };
 const toastStyle = (t) => ({ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: t === 'success' ? '#16a34a' : '#ef4444', color: '#fff', padding: '12px 25px', borderRadius: '50px', fontWeight: '800', zIndex: 9999, fontSize: '0.75rem' });
 const labelStyle = { fontSize: '0.65rem', fontWeight: '800', color: '#999', marginBottom: '6px', display: 'block' };
 const gridContainer = () => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(100px, 1fr))`, gap: '15px' });
-const cardGrid = { border: '1px solid #eee', padding: '15px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '8px', background:'#fff' };
+const cardGrid = { border: '1px solid #eee', padding: '15px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: '8px', background: '#fff' };
 const toggleContainer = (on) => ({ width: '38px', height: '20px', background: on ? '#16a34a' : '#eee', borderRadius: '12px', position: 'relative', cursor: 'pointer' });
 const toggleCircle = (on) => ({ width: '14px', height: '14px', background: '#fff', borderRadius: '50%', position: 'absolute', top: '3px', left: on ? '21px' : '3px', transition: '0.2s' });
 const searchContainer = { position: 'relative', marginBottom: '20px' };
 const searchInput = { width: '100%', padding: '12px 12px 12px 40px', border: '1px solid #eee', borderRadius: '10px', fontFamily: 'Lexend', fontSize: '0.8rem', boxSizing: 'border-box' };
 const mainLayout = { display: 'flex', fontFamily: 'Lexend, sans-serif', backgroundColor: '#fff', minHeight: '100vh', fontSize: '0.75rem' };
-const boxInfo = { background: '#f0f7ff', padding: '12px', marginTop: '12px', borderRadius: '8px', fontSize: '0.7rem', border: '1px solid #cce5ff', lineHeight: '1.5' };
