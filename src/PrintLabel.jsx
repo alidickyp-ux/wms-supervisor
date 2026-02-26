@@ -83,6 +83,7 @@ function LabelContent({ box, pageIndex, totalPages, isPreview }) {
       color: '#000', background: '#fff',
       display: 'flex', flexDirection: 'column',
       gap: p ? '2px' : '1pt',
+      fontWeight: 900,
     }}>
 
       {/* BANNER MERAH */}
@@ -100,7 +101,7 @@ function LabelContent({ box, pageIndex, totalPages, isPreview }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
         <div>
           <div style={{ fontWeight: 900, fontSize: p ? '10px' : '9pt' }}>PT DUA PULUH TIGA</div>
-          <div style={{ fontSize: p ? '6px' : '5.5pt', color: '#444' }}>Jl. Kopo Bihbul Raya No 68, Bandung</div>
+          <div style={{ fontSize: p ? '6px' : '5.5pt', color: '#000' }}>Jl. Kopo Bihbul Raya No 68, Bandung</div>
           <div style={{ fontSize: p ? '6px' : '5pt', marginTop: '1px' }}>HUID: <b>{box.huid}</b></div>
         </div>
         <div style={{ flexShrink: 0 }}>
@@ -114,7 +115,7 @@ function LabelContent({ box, pageIndex, totalPages, isPreview }) {
       <div style={{ flexShrink: 0 }}>
         <div style={{ fontWeight: 900, fontSize: p ? '8px' : '7.5pt' }}>{box.picklist_number}</div>
         <div style={{ fontWeight: 900, fontSize: p ? '8px' : '7.5pt' }}>{box.nama_toko || '-'}</div>
-        <div style={{ fontSize: p ? '6px' : '5.5pt', color: '#555' }}>{box.alamat_toko || '-'}</div>
+        <div style={{ fontSize: p ? '6px' : '5.5pt', color: '#000' }}>{box.alamat_toko || '-'}</div>
       </div>
 
       <div style={{ borderTop: '1px dashed #000', flexShrink: 0 }} />
@@ -144,7 +145,7 @@ function LabelContent({ box, pageIndex, totalPages, isPreview }) {
             <tr key={k} className={k % 2 === 0 ? 'print-row-even' : 'print-row-odd'}
               style={{ borderBottom: '0.5px solid #ccc', background: k % 2 === 0 ? '#fff' : '#f9f9f9' }}>
               <td style={{ padding: p ? '0.5px 2px' : '0.5pt 2pt', fontWeight: 700 }}>{it?.sku}</td>
-              <td style={{ padding: p ? '0.5px 2px' : '0.5pt 2pt', color: '#333', overflow: 'hidden', maxWidth: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it?.nama_item || it?.name || '-'}</td>
+              <td style={{ padding: p ? '0.5px 2px' : '0.5pt 2pt', color: '#000', overflow: 'hidden', maxWidth: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it?.nama_item || it?.name || '-'}</td>
               <td style={{ padding: p ? '0.5px 2px' : '0.5pt 2pt', textAlign: 'center', fontWeight: 900 }}>{it?.qty}</td>
             </tr>
           ))}
