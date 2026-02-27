@@ -52,18 +52,20 @@ function App() {
   }, [newLoc.id, newLoc.zone, newLoc.aisle]);
 
   /* ================= 3. UTILS ================= */
-  // Timezone sudah WIB di database — tampil apa adanya tanpa konversi
+  // API selalu kirim UTC (Z) — tambah +7 jam untuk WIB
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-' || dateStr === 'null') return '-';
     try {
-      // Ambil hanya bagian datetime, buang timezone offset (+07)
-      // Format: "2026-02-27 14:29:35.850154+07" → "27/2/2026, 14.29.35"
-      const clean = dateStr.replace(/\+\d{2}$/, '').replace('T', ' ');
-      const [datePart, timePart] = clean.split(' ');
-      if (!datePart) return dateStr;
-      const [y, m, d] = datePart.split('-');
-      const time = timePart ? timePart.substring(0, 8) : '';
-      return `${parseInt(d)}/${parseInt(m)}/${y}${time ? ', ' + time : ''}`;
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+      const day   = String(wib.getUTCDate()).padStart(2, '0');
+      const month = String(wib.getUTCMonth() + 1).padStart(2, '0');
+      const year  = wib.getUTCFullYear();
+      const hh    = String(wib.getUTCHours()).padStart(2, '0');
+      const mm    = String(wib.getUTCMinutes()).padStart(2, '0');
+      const ss    = String(wib.getUTCSeconds()).padStart(2, '0');
+      return `${day}/${month}/${year}, ${hh}:${mm}:${ss}`;
     } catch (e) { return dateStr; }
   };
 
