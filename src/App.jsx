@@ -52,12 +52,14 @@ function App() {
   }, [newLoc.id, newLoc.zone, newLoc.aisle]);
 
   /* ================= 3. UTILS ================= */
+  // Timezone sudah WIB di database — cukup format tampilan saja
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-' || dateStr === 'null') return '-';
     try {
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return dateStr;
-      return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+      // Tampilkan apa adanya dari DB (sudah WIB), tanpa konversi timezone
+      return d.toLocaleString('id-ID', { timeZone: 'UTC' });
     } catch (e) { return dateStr; }
   };
 
@@ -82,7 +84,7 @@ function App() {
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Data");
-    XLSX.writeFile(wb, `COOL_${activeMenu}_WIB.xlsx`);
+    XLSX.writeFile(wb, `COOL_${activeMenu}.xlsx`);
   };
 
   /* ================= 4. FETCHING ================= */
@@ -255,7 +257,7 @@ function App() {
             {['1st Count', '2nt Count', 'Snapshoot', 'Reconciliation'].includes(activeMenu) && (
               <button onClick={() => { if (window.confirm("Hapus data menu ini?")) axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st') ? 'first' : activeMenu.includes('2nt') ? 'second' : activeMenu.includes('Snap') ? 'snap' : 'recon'}`).then(() => fetchData()); }} style={{ ...btnWhite, color: 'red' }}><Trash2 size={12} /> CLEAR</button>
             )}
-            <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12} /> EXPORT WIB</button>
+            <button onClick={handleExportExcel} style={{ ...btnWhite, color: '#16a34a' }}><FileSpreadsheet size={12} /> EXPORT</button>
             <button onClick={fetchData} style={btnIcon}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>
         </header>
