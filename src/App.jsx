@@ -52,14 +52,18 @@ function App() {
   }, [newLoc.id, newLoc.zone, newLoc.aisle]);
 
   /* ================= 3. UTILS ================= */
-  // Timezone sudah WIB di database — cukup format tampilan saja
+  // Timezone sudah WIB di database — tampil apa adanya tanpa konversi
   const formatWIB = (dateStr) => {
     if (!dateStr || dateStr === '-' || dateStr === 'null') return '-';
     try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
-      // Tampilkan apa adanya dari DB (sudah WIB), tanpa konversi timezone
-      return d.toLocaleString('id-ID', { timeZone: 'UTC' });
+      // Ambil hanya bagian datetime, buang timezone offset (+07)
+      // Format: "2026-02-27 14:29:35.850154+07" → "27/2/2026, 14.29.35"
+      const clean = dateStr.replace(/\+\d{2}$/, '').replace('T', ' ');
+      const [datePart, timePart] = clean.split(' ');
+      if (!datePart) return dateStr;
+      const [y, m, d] = datePart.split('-');
+      const time = timePart ? timePart.substring(0, 8) : '';
+      return `${parseInt(d)}/${parseInt(m)}/${y}${time ? ', ' + time : ''}`;
     } catch (e) { return dateStr; }
   };
 
