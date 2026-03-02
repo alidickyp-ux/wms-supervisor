@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { PrintLabelPanel } from './PrintLabel';
@@ -6,81 +6,80 @@ import {
   RefreshCw, FileSpreadsheet, Trash2, LogOut, Upload, Search,
   ClipboardCheck, Loader2, Plus, Database as DbIcon, LayoutGrid, X,
   Truck, Package, Printer, ArrowLeft, ChevronDown, ChevronRight,
-  FileText, Menu, Home, BoxSelect, BarChart3, ChevronLeft
+  FileText, Menu, BoxSelect, ChevronLeft, AlertCircle
 } from 'lucide-react';
 
 const API_BASE     = 'https://wms-neon-bridge.vercel.app/api/inventory';
 const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web';
 const API_DISPATCH = 'https://wms-neon-bridge.vercel.app/api/dispatch';
 
-/* ── NAV STRUCTURE ── */
 const NAV = [
-  {
-    key: 'inventory', label: 'Inventory', icon: <BoxSelect size={14}/>,
-    children: ['Master Lokasi','Snapshoot','1st Count','2nt Count','Reconciliation']
-  },
-  {
-    key: 'outbound', label: 'Outbound', icon: <Truck size={14}/>,
-    children: ['Picking','Packing','Explorer','Print Label']
-  },
-  {
-    key: 'dispatch', label: 'Dispatch', icon: <Package size={14}/>,
-    children: ['Dispatch Log','Handover','History']
-  },
+  { key:'inventory', label:'Inventory',  icon:<BoxSelect size={13}/>,   children:['Master Lokasi','Snapshoot','1st Count','2nt Count','Reconciliation'] },
+  { key:'outbound',  label:'Outbound',   icon:<Truck size={13}/>,        children:['Picking','Packing','Explorer','Print Label'] },
+  { key:'dispatch',  label:'Dispatch',   icon:<Package size={13}/>,      children:['Dispatch Log','Handover','History'] },
 ];
 
+/* ── DEBOUNCE HOOK ── */
+function useDebounce(value, delay=400) {
+  const [dv, setDv] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDv(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return dv;
+}
+
 export default function App() {
-  /* ── AUTH ── */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser]             = useState(null);
   const [username, setUsername]     = useState('');
   const [password, setPassword]     = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
-  /* ── NAV ── */
-  const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const [sidebarOpen, setSidebarOpen]     = useState(true);
   const [expandedGroup, setExpandedGroup] = useState('inventory');
-  const [activeMenu, setActiveMenu]     = useState('Master Lokasi');
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [activeMenu, setActiveMenu]       = useState('Master Lokasi');
+  const [userMenuOpen, setUserMenuOpen]   = useState(false);
 
-  /* ── DATA ── */
-  const [data, setData]             = useState([]);
-  const [loading, setLoading]       = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [data, setData]     = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const searchTerm = useDebounce(searchInput, 400);
   const [selectedHeader, setSelectedHeader] = useState(null);
-  const [masterTab, setMasterTab]   = useState('grid');
+  const [masterTab, setMasterTab]     = useState('grid');
   const [explorerTab, setExplorerTab] = useState('active');
-  const [toast, setToast]           = useState({ show: false, msg: '', type: 'success' });
+  const [toast, setToast]   = useState({ show:false, msg:'', type:'success' });
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newLoc, setNewLoc]         = useState({ id:'', zone:'', aisle:'', unique:'', assign:'closed' });
+  const [newLoc, setNewLoc] = useState({ id:'', zone:'', aisle:'', unique:'', assign:'closed' });
 
-  /* ── DISPATCH ── */
-  const [dispatchData, setDispatchData]     = useState([]);
+  const [dispatchData, setDispatchData]       = useState([]);
   const [dispatchLoading, setDispatchLoading] = useState(false);
-  const [historyData, setHistoryData]       = useState([]);
+  const [historyData, setHistoryData]         = useState([]);
   const [selectedHistSession, setSelectedHistSession] = useState(null);
-  const [histDetail, setHistDetail]         = useState(null);
+  const [histDetail, setHistDetail]           = useState(null);
 
-  /* ── PRINT ── */
   const [selectedPcb, setSelectedPcb]         = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions]           = useState([]);
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 900);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
 
   useEffect(() => {
     if (newLoc.id && newLoc.zone && newLoc.aisle)
       setNewLoc(p => ({ ...p, unique: `${p.zone.toUpperCase()}-${p.aisle}` }));
   }, [newLoc.id, newLoc.zone, newLoc.aisle]);
 
-  /* ── UTILS ── */
   const formatWIB = (s) => {
     if (!s || s === '-') return '-';
     try {
-      const d   = new Date(s);
-      if (isNaN(d)) return s;
-      const w   = new Date(d.getTime() + 7*3600000);
-      const p   = n => String(n).padStart(2,'0');
+      const d = new Date(s); if (isNaN(d)) return s;
+      const w = new Date(d.getTime() + 7*3600000);
+      const p = n => String(n).padStart(2,'0');
       return `${p(w.getUTCDate())}/${p(w.getUTCMonth()+1)}/${w.getUTCFullYear()} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
     } catch { return s; }
   };
@@ -94,11 +93,9 @@ export default function App() {
 
   const handleExportExcel = (rows, filename) => {
     if (!rows?.length) return showToast("Tidak ada data","error");
-    const timeKeys = ['scanned_at','timestamp','tanggal_packing','created_at','closed_at','handover_at'];
     const out = rows.map(r => {
       const n = {...r};
-      timeKeys.forEach(k => { if (n[k]) n[k] = formatWIB(n[k]); });
-      // tambah kolom diff untuk recon
+      ['scanned_at','timestamp','tanggal_packing','created_at','closed_at','handover_at'].forEach(k => { if(n[k]) n[k] = formatWIB(n[k]); });
       if (activeMenu === 'Reconciliation') n['diff'] = Number(n.qty_2nd||n.qty_1st||0) - Number(n.qty_snap||0);
       return n;
     });
@@ -108,7 +105,6 @@ export default function App() {
     XLSX.writeFile(wb, filename || 'export.xlsx');
   };
 
-  /* ── FETCH ── */
   const isDispatch = ['Dispatch Log','Handover','History'].includes(activeMenu);
 
   const fetchData = async () => {
@@ -119,13 +115,13 @@ export default function App() {
         const res = await axios.get(`${API_OUTBOUND}?target=packing_transactions`);
         setData(res.data?.data || []);
       } else {
-        const targetMap = {
-          'Master Lokasi': masterTab==='database' ? 'master_all' : 'master',
+        const tm = {
+          'Master Lokasi': masterTab==='database'?'master_all':'master',
           'Snapshoot':'snapshot_list','1st Count':'first','2nt Count':'second','Reconciliation':'recon',
           'Picking':'picking_transactions','Packing':'packing_transactions','Explorer':'outbound_explorer'
         };
         const api = ['Picking','Packing','Explorer'].includes(activeMenu) ? API_OUTBOUND : API_BASE;
-        const res = await axios.get(`${api}?action=get_data&target=${targetMap[activeMenu]}`);
+        const res = await axios.get(`${api}?action=get_data&target=${tm[activeMenu]}`);
         setData(res.data?.data || []);
       }
     } catch { setData([]); }
@@ -137,16 +133,15 @@ export default function App() {
   const fetchDispatch = async (menu) => {
     setDispatchLoading(true);
     try {
-      if (menu === 'Dispatch Log') {
+      if (menu==='Dispatch Log') {
         const res = await axios.get(`${API_DISPATCH}?action=get_data&target=dispatch_list`);
         setDispatchData(res.data?.data || []);
-      } else if (menu === 'Handover') {
+      } else if (menu==='Handover') {
         const res = await axios.get(`${API_DISPATCH}?action=get_data&target=handover_list`);
         setDispatchData(res.data?.data || []);
-      } else if (menu === 'History') {
+      } else if (menu==='History') {
         const res = await axios.get(`${API_DISPATCH}?action=get_data&target=session_list`);
-        const all = res.data?.data || [];
-        setHistoryData(all.filter(s => s.status === 'HANDOVER_DONE'));
+        setHistoryData((res.data?.data||[]).filter(s=>s.status==='HANDOVER_DONE'));
         setSelectedHistSession(null); setHistDetail(null);
       }
     } catch { setDispatchData([]); }
@@ -167,9 +162,9 @@ export default function App() {
     setLoginLoading(true);
     try {
       const res = await axios.post(`${API_BASE}?action=login`, { username, password });
-      if (res.data?.status === 'success') { setUser(res.data.user); setIsLoggedIn(true); }
-      else showToast("User/Pass Salah","error");
-    } catch { showToast("Server Error","error"); }
+      if (res.data?.status==='success') { setUser(res.data.user); setIsLoggedIn(true); setSidebarOpen(!isMobile); }
+      else showToast("User / Password salah","error");
+    } catch { showToast("Server error","error"); }
     finally { setLoginLoading(false); }
   };
 
@@ -179,72 +174,58 @@ export default function App() {
     reader.onload = async (evt) => {
       setLoading(true);
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target.result), { type:'array' });
+        const wb = XLSX.read(new Uint8Array(evt.target.result),{type:'array'});
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        await axios.post(`${API_BASE}?action=upload_snap`, { data: rows });
-        showToast("Snapshot Terupload!"); fetchData();
-      } catch { showToast("Gagal Upload","error"); }
+        await axios.post(`${API_BASE}?action=upload_snap`,{data:rows});
+        showToast("Snapshot terupload!"); fetchData();
+      } catch { showToast("Gagal upload","error"); }
       finally { setLoading(false); e.target.value=''; }
     };
     reader.readAsArrayBuffer(file);
   };
 
   const handleToggle = async (uid, cur) => {
-    const next = cur === 'open' ? 'closed' : 'open';
+    const next = cur==='open'?'closed':'open';
     try {
-      await axios.post(`${API_BASE}?action=assign_location`, { unique_id: uid, status: next });
-      setData(prev => prev.map(r => r.unique_id === uid ? { ...r, assign: next } : r));
-    } catch { showToast("Gagal Toggle","error"); }
+      await axios.post(`${API_BASE}?action=assign_location`,{unique_id:uid,status:next});
+      setData(p => p.map(r => r.unique_id===uid ? {...r,assign:next} : r));
+    } catch { showToast("Gagal toggle","error"); }
   };
 
-  /* ── PICKLIST GROUPING ── */
   const picklistGroups = useMemo(() => {
-    if (!['Picking','Packing','Explorer'].includes(activeMenu) || !data) return [];
+    if (!['Picking','Packing','Explorer'].includes(activeMenu)||!data) return [];
     const map = {};
     data.forEach(r => {
-      const k = r.picklist_number; if (!k) return;
-      if (!map[k]) map[k] = {
-        id: k,
-        name: r.nama_customer || r.nama_toko || '-',
-        qtyReq: 0, qtyPick: 0, qtyPack: 0, allPacked: true
-      };
-      map[k].qtyReq  += Number(r.qty_req  || r.qty_order || 0);
-      map[k].qtyPick += Number(r.qty_picked || r.qty_actual || 0);
-      map[k].qtyPack += Number(r.qty_packed || 0);
-      if (r.status !== 'packed') map[k].allPacked = false;
+      const k = r.picklist_number; if(!k) return;
+      if(!map[k]) map[k]={ id:k, name:r.nama_customer||r.nama_toko||'-', qtyReq:0, qtyPick:0, qtyPack:0, allPacked:true };
+      map[k].qtyReq  += Number(r.qty_req||r.qty_order||0);
+      map[k].qtyPick += Number(r.qty_picked||r.qty_actual||0);
+      map[k].qtyPack += Number(r.qty_packed||0);
+      if(r.status!=='packed') map[k].allPacked = false;
     });
     return Object.values(map);
   }, [data, activeMenu]);
 
-  const filteredGroups = picklistGroups.filter(h => {
-    if (!searchTerm) return true;
-    return h.id.toUpperCase().includes(searchTerm.toUpperCase()) ||
-           h.name.toUpperCase().includes(searchTerm.toUpperCase());
-  });
-
-  const filteredData = (data || []).filter(r => {
-    if (selectedHeader) return r.picklist_number === selectedHeader;
-    if (!searchTerm) return true;
+  const applyFilter = (arr) => {
+    if (!searchTerm) return arr;
     const s = searchTerm.toUpperCase();
-    return String(r.location_id||r.picklist_number||r.id||'').includes(s) ||
-           String(r.artikel||r.product_id||r.sku||'').includes(s);
-  });
-
-  const filteredDispatch = (dispatchData || []).filter(r => {
-    if (!searchTerm) return true;
-    return Object.values(r).some(v => String(v).toUpperCase().includes(searchTerm.toUpperCase()));
-  });
-
-  /* ── STATUS COLOR ── */
-  const statusColor = (s) => {
-    if (s === 'CONFIRMED')   return '#2E7D32';
-    if (s === 'NOT_FOUND')   return '#E65100';
-    if (s === 'CANCELLED')   return '#757575';
-    if (s === 'DISCREPANCY') return '#B71C1C';
-    return '#000';
+    return arr.filter(r => Object.values(r).some(v => String(v).toUpperCase().includes(s)));
   };
 
-  /* ── HISTORY PDF ── */
+  const filteredGroups = applyFilter(picklistGroups.filter(h => activeMenu!=='Explorer' || (explorerTab==='active' ? !h.allPacked : h.allPacked)));
+  const filteredData = selectedHeader
+    ? data.filter(r => r.picklist_number===selectedHeader)
+    : applyFilter(data);
+  const filteredDispatch = applyFilter(dispatchData);
+
+  const statusColor = (s) => {
+    if(s==='CONFIRMED') return 'var(--green)';
+    if(s==='NOT_FOUND') return 'var(--orange)';
+    if(s==='CANCELLED') return 'var(--muted)';
+    if(s==='DISCREPANCY') return 'var(--red)';
+    return 'var(--text)';
+  };
+
   const loadHistDetail = async (session) => {
     setSelectedHistSession(session);
     try {
@@ -257,578 +238,698 @@ export default function App() {
     if (!selectedHistSession || !histDetail) return;
     const s = selectedHistSession;
     const rows = histDetail.map((r,i) =>
-      `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
-        <td style="padding:5px 8px;border:1px solid #eee">${i+1}</td>
-        <td style="padding:5px 8px;border:1px solid #eee">${r.tracking_reference||r.do_reference||'-'}</td>
-        <td style="padding:5px 8px;border:1px solid #eee;color:${statusColor(r.handover_status)};font-weight:700">${r.handover_status||'-'}</td>
+      `<tr style="background:${i%2===0?'#fff':'#f9f9f9'}">
+        <td>${i+1}</td><td>${r.tracking_reference||r.do_reference||'-'}</td>
+        <td style="color:${statusColor(r.handover_status)};font-weight:700">${r.handover_status||'-'}</td>
       </tr>`).join('');
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Handover - ${s.session_code}</title>
-    <style>body{font-family:Arial;font-size:11px;margin:30px}h2{text-align:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin:12px 0}.row{display:flex;gap:6px}.lbl{font-weight:700;min-width:100px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#eee;padding:7px 10px;text-align:left;font-size:10px;border:1px solid #ddd}.signs{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}.sign-box{border:1px solid #ccc;height:80px}.sn{text-align:center;font-size:10px;color:#666;margin-top:6px}@media print{body{margin:15px}}</style>
-    </head><body>
-    <h2>Handover List</h2>
-    <div class="grid">
-      <div class="row"><span class="lbl">Session</span><span>: ${s.session_code}</span></div>
-      <div class="row"><span class="lbl">Tgl Handover</span><span>: ${formatWIB(s.closed_at)?.split(' ')[0]||'-'}</span></div>
-      <div class="row"><span class="lbl">Security</span><span>: ${s.security_name||'-'}</span></div>
-      <div class="row"><span class="lbl">Jam</span><span>: ${formatWIB(s.closed_at)?.split(' ')[1]||'-'}</span></div>
-      <div class="row"><span class="lbl">Kurir</span><span>: ${s.courier_name||'-'}</span></div>
-      <div class="row"><span class="lbl">No. Kendaraan</span><span>: ${s.vehicle_number||'-'}</span></div>
-      <div class="row"><span class="lbl">Total Paket</span><span>: ${histDetail.length} paket</span></div>
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Handover ${s.session_code}</title>
+    <style>*{font-family:Arial;font-size:11px}body{margin:30px}h2{text-align:center;margin-bottom:16px}
+    .g{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;margin:12px 0;padding:12px;background:#f9f9f9;border-radius:4px}
+    .r{display:flex;gap:6px}.lb{font-weight:700;min-width:100px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th{background:#222;color:#fff;padding:7px 10px;text-align:left}
+    td{padding:6px 10px;border-bottom:1px solid #eee}
+    .signs{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}
+    .sb{border:1px solid #ccc;height:80px;border-radius:4px;margin-top:6px}
+    .sn{text-align:center;margin-top:6px;color:#666}
+    @media print{body{margin:15px}}</style></head><body>
+    <h2>HANDOVER LIST</h2>
+    <div class="g">
+      <div class="r"><span class="lb">Session</span><span>: ${s.session_code}</span></div>
+      <div class="r"><span class="lb">Tgl Handover</span><span>: ${formatWIB(s.closed_at)?.split(' ')[0]||'-'}</span></div>
+      <div class="r"><span class="lb">Security</span><span>: ${s.security_name||'-'}</span></div>
+      <div class="r"><span class="lb">Jam</span><span>: ${formatWIB(s.closed_at)?.split(' ')[1]||'-'}</span></div>
+      <div class="r"><span class="lb">Kurir</span><span>: ${s.courier_name||'-'}</span></div>
+      <div class="r"><span class="lb">No. Kendaraan</span><span>: ${s.vehicle_number||'-'}</span></div>
+      <div class="r"><span class="lb">Total Paket</span><span>: ${histDetail.length} paket</span></div>
     </div>
-    <table><thead><tr><th style="width:40px">No.</th><th>No. AWB</th><th style="width:100px">Status</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th style="width:40px">No.</th><th>No. AWB</th><th style="width:110px">Status</th></tr></thead>
+    <tbody>${rows}</tbody></table>
     <div class="signs">
-      <div><div style="font-weight:700;font-size:10px;margin-bottom:6px">Security</div><div class="sign-box"></div><div class="sn">( ${s.security_name||'___'} )</div></div>
-      <div><div style="font-weight:700;font-size:10px;margin-bottom:6px">Kurir</div><div class="sign-box"></div><div class="sn">( ${s.courier_name||'___'} )</div></div>
+      <div><div style="font-weight:700">Security</div><div class="sb"></div><div class="sn">( ${s.security_name||'_____________'} )</div></div>
+      <div><div style="font-weight:700">Kurir</div><div class="sb"></div><div class="sn">( ${s.courier_name||'_____________'} )</div></div>
     </div>
     <script>window.onload=()=>window.print()<\/script></body></html>`;
     const w = window.open('','_blank'); w.document.write(html); w.document.close();
   };
 
-  /* ── LOGIN ── */
+  /* ══════════════════════════════════════════
+     LOGIN PAGE
+  ══════════════════════════════════════════ */
   if (!isLoggedIn) return (
-    <div style={{height:'100vh',display:'flex',justifyContent:'center',alignItems:'center',background:'#f5f5f5'}}>
-      <div style={{width:340,background:'#fff',border:'1px solid #eee',borderRadius:12,overflow:'hidden',boxShadow:'0 10px 30px rgba(0,0,0,0.05)'}}>
-        <div style={{background:'#000',color:'#fff',padding:'25px',textAlign:'center'}}>
-          <h2 style={{margin:0,fontSize:'1rem',fontWeight:900}}>COOL DASHBOARD</h2>
-          <p style={{margin:'4px 0 0',fontSize:'0.65rem',color:'#aaa'}}>WMS MANAGEMENT</p>
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0a0a0a',fontFamily:"'DM Sans', 'Lexend', sans-serif"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700;900&family=DM+Mono:wght@400;500&display=swap');
+        .login-card{width:360px;background:#111;border:1px solid #222;border-radius:16px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6)}
+        .login-inp{width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#fff;padding:12px 14px;border-radius:8px;font-family:inherit;font-size:0.78rem;margin-bottom:10px;box-sizing:border-box;outline:none;transition:border 0.2s}
+        .login-inp:focus{border-color:#444}
+        .login-inp::placeholder{color:#555}
+        .login-btn{width:100%;background:#fff;color:#000;padding:13px;border:none;border-radius:8px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;transition:opacity 0.2s;display:flex;align-items:center;justify-content:center;gap:8px}
+        .login-btn:hover{opacity:0.9}
+      `}</style>
+      <div className="login-card">
+        <div style={{padding:'32px 32px 24px',borderBottom:'1px solid #1e1e1e'}}>
+          <div style={{fontSize:'0.6rem',letterSpacing:'0.15em',color:'#555',fontWeight:600,textTransform:'uppercase',marginBottom:6}}>WMS Management</div>
+          <div style={{fontSize:'1.4rem',fontWeight:900,color:'#fff',letterSpacing:'-0.02em'}}>COOL Dashboard</div>
         </div>
-        <div style={{padding:30}}>
-          <input placeholder="Username" style={SI} value={username} onChange={e=>setUsername(e.target.value)}/>
-          <input type="password" placeholder="Password" style={SI} value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
-          <button onClick={handleLogin} style={{width:'100%',background:'#000',color:'#fff',padding:14,border:'none',borderRadius:8,fontWeight:800,cursor:'pointer',fontSize:'0.75rem',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-            {loginLoading ? <Loader2 size={16} className="animate-spin"/> : 'LOGIN'}
+        <div style={{padding:'28px 32px 32px'}}>
+          <input className="login-inp" placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)}/>
+          <input className="login-inp" type="password" placeholder="Password" value={password}
+            onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
+          <div style={{height:4}}/>
+          <button className="login-btn" onClick={handleLogin}>
+            {loginLoading ? <Loader2 size={15} className="spin"/> : 'MASUK'}
           </button>
         </div>
       </div>
     </div>
   );
 
-  /* ── SIDEBAR ── */
-  const Sidebar = () => (
-    <>
-      {/* Overlay mobile */}
-      {sidebarOpen && isMobile && <div onClick={()=>setSidebarOpen(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:19}}/>}
-      <nav style={{
-        position:'fixed', top:0, left: sidebarOpen ? 0 : -240, width:240,
-        height:'100vh', background:'#fff', borderRight:'1px solid #eee',
-        transition:'left 0.25s ease', zIndex:20, display:'flex', flexDirection:'column',
-        overflowY:'auto'
-      }}>
-        {/* Logo + user */}
-        <div style={{padding:'18px 16px 12px', borderBottom:'1px solid #f0f0f0'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontWeight:900,fontSize:'0.85rem'}}>COOL DASHBOARD</span>
-            <button onClick={()=>setSidebarOpen(false)} style={{border:'none',background:'none',cursor:'pointer',color:'#999',padding:2}}>
-              <ChevronLeft size={16}/>
-            </button>
+  /* ══════════════════════════════════════════
+     MAIN APP
+  ══════════════════════════════════════════ */
+  const navigate = (menu) => {
+    setActiveMenu(menu);
+    setSearchInput('');
+    setSelectedHeader(null);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  return (
+    <div style={{fontFamily:"'DM Sans','Lexend',sans-serif",background:'var(--bg)',minHeight:'100vh',fontSize:'0.72rem',color:'var(--text)'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700;900&family=DM+Mono:wght@400;500&display=swap');
+        :root{
+          --bg:#f7f7f5; --surface:#ffffff; --border:#e8e8e4; --border2:#f0f0ec;
+          --text:#111; --muted:#888; --muted2:#bbb;
+          --accent:#1a1a1a; --accent2:#2d2d2d;
+          --green:#2d6a4f; --orange:#c05621; --red:#9b1c1c;
+          --sidebar:220px; --topbar:52px;
+        }
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{background:var(--bg)}
+        .spin{animation:spin 1s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        /* Scrollbar */
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#ddd;border-radius:2px}
+        /* Sidebar */
+        .sidebar{position:fixed;top:0;left:0;width:var(--sidebar);height:100vh;background:var(--surface);
+          border-right:1px solid var(--border);z-index:30;display:flex;flex-direction:column;
+          transition:transform 0.22s cubic-bezier(0.4,0,0.2,1);overflow:hidden}
+        .sidebar.closed{transform:translateX(calc(-1 * var(--sidebar)))}
+        .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.25);z-index:29;
+          backdrop-filter:blur(2px);animation:fadeIn 0.2s}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        /* Nav */
+        .nav-group-header{display:flex;align-items:center;justify-content:space-between;
+          padding:8px 16px;cursor:pointer;user-select:none;transition:background 0.15s;border-radius:0}
+        .nav-group-header:hover{background:var(--border2)}
+        .nav-item{padding:6px 14px 6px 32px;cursor:pointer;font-size:0.65rem;
+          display:flex;align-items:center;gap:6px;transition:all 0.12s;color:var(--muted);border-radius:0;
+          border-left:2px solid transparent;white-space:nowrap}
+        .nav-item:hover{color:var(--text);background:var(--border2)}
+        .nav-item.active{color:var(--text);font-weight:700;background:#f0ede8;border-left-color:var(--text)}
+        /* Table */
+        .data-table{width:100%;border-collapse:collapse}
+        .data-table th{padding:9px 12px;font-size:0.58rem;color:var(--muted);font-weight:600;
+          text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--border);
+          position:sticky;top:0;background:var(--surface);z-index:2;white-space:nowrap;text-align:left}
+        .data-table td{padding:9px 12px;font-size:0.65rem;border-bottom:1px solid var(--border2);white-space:nowrap;color:var(--text)}
+        .data-table tr:hover td{background:#fafaf8}
+        /* Btn */
+        .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:7px;
+          font-size:0.62rem;font-weight:600;cursor:pointer;border:1px solid var(--border);
+          background:var(--surface);color:var(--text);transition:all 0.15s;font-family:inherit;white-space:nowrap}
+        .btn:hover{background:var(--border2);border-color:#d0d0c8}
+        .btn.primary{background:var(--text);color:#fff;border-color:var(--text)}
+        .btn.primary:hover{background:var(--accent2)}
+        .btn.danger{color:var(--red)}
+        .btn.success{color:var(--green)}
+        .btn-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;
+          border-radius:7px;border:1px solid var(--border);background:var(--surface);cursor:pointer;
+          color:var(--muted);transition:all 0.15s;font-family:inherit}
+        .btn-icon:hover{background:var(--border2);color:var(--text)}
+        /* Search */
+        .search-wrap{position:relative;margin-bottom:14px}
+        .search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted2);pointer-events:none}
+        .search-inp{width:100%;padding:8px 10px 8px 34px;border:1px solid var(--border);border-radius:8px;
+          font-size:0.65rem;background:var(--surface);color:var(--text);font-family:inherit;outline:none;transition:border 0.15s}
+        .search-inp:focus{border-color:#bbb}
+        .search-inp::placeholder{color:var(--muted2)}
+        /* Tag */
+        .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.55rem;font-weight:700;letter-spacing:0.04em}
+        .tag-green{background:#ecfdf5;color:var(--green)}
+        .tag-amber{background:#fffbeb;color:#92400e}
+        .tag-red{background:#fff1f2;color:var(--red)}
+        .tag-blue{background:#eff6ff;color:#1e40af}
+        /* Picklist row */
+        .plist-row{display:flex;align-items:center;padding:10px 14px;gap:12px;cursor:pointer;
+          border-bottom:1px solid var(--border2);transition:background 0.12s}
+        .plist-row:hover{background:#faf9f7}
+        /* Card */
+        .hist-card{border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;
+          background:var(--surface);transition:all 0.2s}
+        .hist-card:hover{border-color:#888;box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-1px)}
+        /* Tab */
+        .tab{padding:7px 14px;font-size:0.62rem;font-weight:600;border:none;border-radius:6px;
+          cursor:pointer;transition:all 0.15s;font-family:inherit}
+        .tab.on{background:var(--text);color:#fff}
+        .tab.off{background:var(--border2);color:var(--muted)}
+        /* Toggle */
+        .toggle{width:34px;height:18px;border-radius:9px;position:relative;cursor:pointer;transition:background 0.2s}
+        .toggle-dot{width:12px;height:12px;background:#fff;border-radius:50%;
+          position:absolute;top:3px;transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+        /* Mono */
+        .mono{font-family:'DM Mono',monospace;font-size:0.6rem}
+        /* Input */
+        .field{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;
+          font-family:inherit;font-size:0.7rem;background:var(--surface);color:var(--text);
+          outline:none;margin-bottom:10px;transition:border 0.15s}
+        .field:focus{border-color:#bbb}
+        /* Progress */
+        .prog-track{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+        .prog-fill{height:100%;border-radius:2px;transition:width 0.3s}
+        /* Pill */
+        .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;
+          font-size:0.58rem;font-weight:700}
+      `}</style>
+
+      {/* TOAST */}
+      {toast.show && (
+        <div style={{position:'fixed',top:14,left:'50%',transform:'translateX(-50%)',
+          background:toast.type==='success'?'#111':'#9b1c1c',color:'#fff',
+          padding:'8px 18px',borderRadius:99,fontWeight:700,zIndex:9999,
+          fontSize:'0.62rem',boxShadow:'0 4px 20px rgba(0,0,0,0.2)',
+          display:'flex',alignItems:'center',gap:7,letterSpacing:'0.02em'}}>
+          {toast.type==='error'&&<AlertCircle size={13}/>}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* SIDEBAR OVERLAY (mobile) */}
+      {sidebarOpen && isMobile && <div className="overlay" onClick={()=>setSidebarOpen(false)}/>}
+
+      {/* SIDEBAR */}
+      <nav className={`sidebar${sidebarOpen?'':' closed'}`}>
+        {/* Header */}
+        <div style={{padding:'18px 16px 14px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+            <div>
+              <div style={{fontSize:'0.58rem',letterSpacing:'0.12em',color:'var(--muted)',textTransform:'uppercase',fontWeight:600}}>WMS</div>
+              <div style={{fontSize:'0.9rem',fontWeight:900,letterSpacing:'-0.02em',color:'var(--text)'}}>COOL</div>
+            </div>
+            <button className="btn-icon" onClick={()=>setSidebarOpen(false)}><ChevronLeft size={14}/></button>
           </div>
-          <div style={{position:'relative',marginTop:8}}>
-            <div onClick={()=>setUserMenuOpen(o=>!o)} style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',padding:'6px 8px',borderRadius:6,background:'#f9f9f9'}}>
-              <div style={{width:24,height:24,borderRadius:'50%',background:'#000',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.6rem',fontWeight:900}}>
-                {user?.full_name?.[0]?.toUpperCase()||'U'}
+          {/* User pill */}
+          <div style={{position:'relative'}}>
+            <div onClick={()=>setUserMenuOpen(o=>!o)}
+              style={{display:'flex',alignItems:'center',gap:9,padding:'8px 10px',
+                background:'var(--bg)',borderRadius:9,cursor:'pointer',border:'1px solid var(--border)'}}>
+              <div style={{width:26,height:26,borderRadius:'50%',background:'var(--text)',color:'#fff',
+                display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.65rem',fontWeight:800,flexShrink:0}}>
+                {user?.full_name?.[0]?.toUpperCase()||'?'}
               </div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:'0.65rem',fontWeight:800,color:'#212121',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.full_name}</div>
-                <div style={{fontSize:'0.55rem',color:'#16a34a',fontWeight:700}}>● Online</div>
+                <div style={{fontSize:'0.63rem',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.full_name}</div>
+                <div style={{fontSize:'0.55rem',color:'var(--green)',fontWeight:600,marginTop:1}}>● Active</div>
               </div>
-              <ChevronDown size={10} style={{color:'#999'}}/>
+              <ChevronDown size={11} style={{color:'var(--muted2)',flexShrink:0,transform:userMenuOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}/>
             </div>
             {userMenuOpen && (
-              <div style={{position:'absolute',top:44,left:0,right:0,background:'#fff',border:'1px solid #eee',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,0.1)',zIndex:100}}>
+              <div style={{position:'absolute',top:46,left:0,right:0,background:'var(--surface)',
+                border:'1px solid var(--border)',borderRadius:9,boxShadow:'0 8px 24px rgba(0,0,0,0.08)',zIndex:10,overflow:'hidden'}}>
                 <div onClick={()=>{setIsLoggedIn(false);setUserMenuOpen(false);}}
-                  style={{padding:'10px 14px',fontSize:'0.65rem',color:'#ef4444',fontWeight:800,cursor:'pointer',display:'flex',alignItems:'center',gap:8,borderRadius:8}}
-                  onMouseEnter={e=>e.currentTarget.style.background='#fff5f5'}
+                  style={{padding:'10px 14px',fontSize:'0.63rem',color:'var(--red)',fontWeight:700,
+                    cursor:'pointer',display:'flex',alignItems:'center',gap:8,transition:'background 0.1s'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='#fff1f2'}
                   onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <LogOut size={12}/> Logout
+                  <LogOut size={13}/> Keluar
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Nav groups */}
-        <div style={{flex:1,padding:'8px 0'}}>
-          {NAV.map(group => (
-            <div key={group.key}>
-              <div
-                onClick={()=>setExpandedGroup(g => g===group.key ? null : group.key)}
-                style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 16px',cursor:'pointer',userSelect:'none',
-                  background: expandedGroup===group.key ? '#f8f8f8' : 'transparent'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:'0.68rem',fontWeight:800,color:'#444',letterSpacing:'0.03em'}}>
-                  {group.icon} {group.label.toUpperCase()}
+        {/* Nav */}
+        <div style={{flex:1,overflowY:'auto',padding:'8px 0'}}>
+          {NAV.map(g => (
+            <div key={g.key}>
+              <div className="nav-group-header" onClick={()=>setExpandedGroup(v=>v===g.key?null:g.key)}>
+                <div style={{display:'flex',alignItems:'center',gap:7,fontSize:'0.62rem',fontWeight:700,
+                  color: expandedGroup===g.key?'var(--text)':'var(--muted)',letterSpacing:'0.04em',textTransform:'uppercase'}}>
+                  {g.icon} {g.label}
                 </div>
-                {expandedGroup===group.key ? <ChevronDown size={12} style={{color:'#bbb'}}/> : <ChevronRight size={12} style={{color:'#bbb'}}/>}
+                <ChevronDown size={11} style={{color:'var(--muted2)',transform:expandedGroup===g.key?'rotate(180deg)':'none',transition:'transform 0.2s'}}/>
               </div>
-              {expandedGroup===group.key && (
-                <div style={{paddingBottom:4}}>
-                  {group.children.map(m => (
-                    <div key={m}
-                      onClick={()=>{ setActiveMenu(m); setSearchTerm(''); setSelectedHeader(null); if(isMobile) setSidebarOpen(false); }}
-                      style={{padding:'7px 16px 7px 36px',cursor:'pointer',fontSize:'0.65rem',
-                        fontWeight: activeMenu===m ? 800 : 400,
-                        color: activeMenu===m ? '#800000' : '#666',
-                        background: activeMenu===m ? '#FFF5F5' : 'transparent',
-                        borderRight: activeMenu===m ? '2px solid #800000' : 'none',
-                        display:'flex',alignItems:'center',gap:6,transition:'0.1s'}}
-                      onMouseEnter={e=>{ if(activeMenu!==m) e.currentTarget.style.background='#fafafa'; }}
-                      onMouseLeave={e=>{ if(activeMenu!==m) e.currentTarget.style.background='transparent'; }}>
-                      {m}
-                    </div>
-                  ))}
+              {expandedGroup===g.key && g.children.map(m => (
+                <div key={m} className={`nav-item${activeMenu===m?' active':''}`} onClick={()=>navigate(m)}>
+                  {m}
                 </div>
-              )}
+              ))}
             </div>
           ))}
         </div>
+
+        {/* Footer */}
+        <div style={{padding:'10px 16px',borderTop:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{fontSize:'0.55rem',color:'var(--muted2)',letterSpacing:'0.04em'}}>COOL WMS v2.0</div>
+        </div>
       </nav>
-    </>
-  );
 
-  /* ── TOPBAR ── */
-  const Topbar = ({ title, actions }) => (
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20,paddingBottom:14,borderBottom:'1px solid #eee'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <button onClick={()=>setSidebarOpen(o=>!o)} style={{border:'1px solid #eee',background:'#fff',borderRadius:6,padding:'6px 8px',cursor:'pointer',display:'flex',alignItems:'center'}}>
-          <Menu size={15}/>
-        </button>
-        {selectedHeader && (
-          <button onClick={()=>setSelectedHeader(null)} style={{border:'1px solid #eee',background:'#fff',borderRadius:6,padding:'6px 8px',cursor:'pointer'}}>
-            <ArrowLeft size={14}/>
-          </button>
-        )}
-        <span style={{fontWeight:900,fontSize:'0.85rem',color:'#111'}}>{title}</span>
-      </div>
-      <div style={{display:'flex',gap:6,alignItems:'center'}}>{actions}</div>
-    </div>
-  );
+      {/* MAIN */}
+      <div style={{marginLeft:!isMobile&&sidebarOpen?'var(--sidebar)':0,transition:'margin-left 0.22s cubic-bezier(0.4,0,0.2,1)',minHeight:'100vh'}}>
 
-  /* ── TABLE WRAPPER (sticky header) ── */
-  const TableBox = ({ children }) => (
-    <div style={{border:'1px solid #eee',borderRadius:8,overflow:'auto',maxHeight:'calc(100vh - 230px)'}}>
-      {children}
-    </div>
-  );
-
-  /* ── SEARCH BAR ── */
-  const SearchBar = ({ placeholder='Cari data...' }) => (
-    <div style={{position:'relative',marginBottom:14}}>
-      <Search size={13} style={{position:'absolute',left:11,top:10,color:'#bbb'}}/>
-      <input placeholder={placeholder} style={{width:'100%',padding:'8px 10px 8px 32px',border:'1px solid #eee',borderRadius:8,fontSize:'0.65rem',boxSizing:'border-box',fontFamily:'inherit'}}
-        value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
-    </div>
-  );
-
-  /* ── PROGRESS BAR ── */
-  const ProgressBar = ({ value, max, color='#16a34a' }) => {
-    const pct = max > 0 ? Math.min(100, Math.round(value/max*100)) : 0;
-    return (
-      <div style={{display:'flex',alignItems:'center',gap:6}}>
-        <div style={{flex:1,height:5,background:'#eee',borderRadius:3,overflow:'hidden'}}>
-          <div style={{width:`${pct}%`,height:'100%',background: pct===100 ? color : '#f59e0b',borderRadius:3,transition:'width 0.3s'}}/>
-        </div>
-        <span style={{fontSize:'0.6rem',color:'#888',minWidth:28}}>{pct}%</span>
-      </div>
-    );
-  };
-
-  /* ── TH style (sticky) ── */
-  const TH = ({ children, w }) => (
-    <th style={{padding:'9px 12px',fontSize:'0.58rem',color:'#999',borderBottom:'1px solid #eee',textTransform:'uppercase',whiteSpace:'nowrap',
-      position:'sticky',top:0,background:'#fafafa',zIndex:2, ...(w?{width:w}:{})}}>
-      {children}
-    </th>
-  );
-  const TD = ({ children, bold, color }) => (
-    <td style={{padding:'9px 12px',fontSize:'0.65rem',whiteSpace:'nowrap', ...(bold?{fontWeight:800}:{}), ...(color?{color}:{})}}>
-      {children}
-    </td>
-  );
-
-  /* ── PICKLIST LIST ROW ── */
-  const PicklistRow = ({ h, idx, mode }) => {
-    const showPack = mode==='Packing' || mode==='Explorer';
-    const qtyReqVal  = h.qtyReq  || '-';
-    const qtyPickVal = h.qtyPick || 0;
-    const qtyPackVal = h.qtyPack || 0;
-    const isExplorer = mode === 'Explorer';
-    return (
-      <div onClick={()=>setSelectedHeader(h.id)}
-        style={{display:'flex',alignItems:'center',padding:'10px 14px',borderBottom:'1px solid #f5f5f5',cursor:'pointer',gap:12,background: idx%2===0?'#fff':'#fefefe',transition:'0.15s'}}
-        onMouseEnter={e=>e.currentTarget.style.background='#FFF5F5'}
-        onMouseLeave={e=>e.currentTarget.style.background= idx%2===0?'#fff':'#fefefe'}>
-        <span style={{fontSize:'0.6rem',color:'#bbb',minWidth:20,textAlign:'right'}}>{idx+1}</span>
-        <div style={{minWidth:140,maxWidth:160}}>
-          <div style={{fontSize:'0.68rem',fontWeight:800,color:'#800000'}}>{h.id}</div>
-          <div style={{fontSize:'0.6rem',color:'#999',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
-        </div>
-        <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
-          <div style={{textAlign:'center',minWidth:50}}>
-            <div style={{fontSize:'0.6rem',color:'#bbb'}}>QTY REQ</div>
-            <div style={{fontSize:'0.7rem',fontWeight:700}}>{qtyReqVal}</div>
-          </div>
-          <div style={{textAlign:'center',minWidth:50}}>
-            <div style={{fontSize:'0.6rem',color:'#bbb'}}>PICK</div>
-            <div style={{fontSize:'0.7rem',fontWeight:700}}>{qtyPickVal}</div>
-          </div>
-          {showPack && (
-            <div style={{textAlign:'center',minWidth:50}}>
-              <div style={{fontSize:'0.6rem',color:'#bbb'}}>PACK</div>
-              <div style={{fontSize:'0.7rem',fontWeight:700}}>{qtyPackVal}</div>
-            </div>
-          )}
-          {showPack && (
-            <div style={{flex:1,minWidth:100,maxWidth:200}}>
-              <ProgressBar value={qtyPackVal} max={qtyPickVal||qtyReqVal||1}/>
-            </div>
-          )}
-        </div>
-        {isExplorer && (
-          <div style={{fontSize:'0.55rem',padding:'2px 8px',borderRadius:4,fontWeight:800,
-            background: h.allPacked ? '#dcfce7' : '#fff3cd',
-            color: h.allPacked ? '#166534' : '#92400e'}}>
-            {h.allPacked ? 'DONE' : 'OPEN'}
-          </div>
-        )}
-        <ChevronRight size={13} style={{color:'#ddd'}}/>
-      </div>
-    );
-  };
-
-  /* ── RENDER DISPATCH ── */
-  const renderDispatch = () => {
-    if (activeMenu === 'History') {
-      return (
-        <div>
-          <Topbar
-            title={selectedHistSession ? `HISTORY: ${selectedHistSession.session_code}` : 'HISTORY HANDOVER'}
-            actions={<>
-              {selectedHistSession && histDetail && <>
-                <button onClick={()=>handleExportExcel(histDetail,`Handover_${selectedHistSession.session_code}.xlsx`)} style={BW}>
-                  <FileSpreadsheet size={12}/> Excel
-                </button>
-                <button onClick={printHandoverPdf} style={{...BW,color:'#800000'}}>
-                  <FileText size={12}/> Cetak PDF
-                </button>
-              </>}
-              <button onClick={()=>fetchDispatch('History')} style={BI}><RefreshCw size={13}/></button>
-            </>}
-          />
-          {selectedHistSession ? (
-            <>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,background:'#FFF8F8',border:'1px solid #eee',borderRadius:8,padding:'12px 14px',marginBottom:14}}>
-                {[['Session',selectedHistSession.session_code],['Transporter',selectedHistSession.transporter_id],
-                  ['Security',selectedHistSession.security_name||'-'],['Kurir',selectedHistSession.courier_name||'-'],
-                  ['No. Kendaraan',selectedHistSession.vehicle_number||'-'],['Total',`${histDetail?.length||0} paket`]
-                ].map(([k,v])=>(
-                  <div key={k} style={{display:'flex',gap:6,fontSize:'0.65rem'}}>
-                    <span style={{fontWeight:800,minWidth:90,color:'#555'}}>{k}</span>
-                    <span style={{color:'#888'}}>: {v}</span>
-                  </div>
-                ))}
+        {/* TOPBAR */}
+        <div style={{position:'sticky',top:0,zIndex:10,background:'rgba(247,247,245,0.92)',
+          backdropFilter:'blur(12px)',borderBottom:'1px solid var(--border)',
+          padding:'0 24px',height:'var(--topbar)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            {!sidebarOpen && (
+              <button className="btn-icon" onClick={()=>setSidebarOpen(true)}><Menu size={15}/></button>
+            )}
+            {(selectedHeader || (activeMenu==='History' && selectedHistSession)) && (
+              <button className="btn-icon" onClick={()=>{
+                if(activeMenu==='History'&&selectedHistSession){ setSelectedHistSession(null); setHistDetail(null); }
+                else setSelectedHeader(null);
+              }}><ArrowLeft size={14}/></button>
+            )}
+            <div>
+              <div style={{fontSize:'0.58rem',color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:600}}>
+                {NAV.find(g=>g.children.includes(activeMenu))?.label||''}
               </div>
-              <TableBox>
-                <table style={{width:'100%',borderCollapse:'collapse'}}>
-                  <thead><tr><TH>No.</TH><TH>No. AWB</TH><TH>Status</TH></tr></thead>
-                  <tbody>
-                    {(histDetail||[]).map((r,i)=>(
-                      <tr key={i} style={{borderBottom:'1px solid #f5f5f5',background:i%2===0?'#fff':'#fafafa'}}>
-                        <TD>{i+1}</TD>
-                        <TD>{r.tracking_reference||r.do_reference||'-'}</TD>
-                        <TD bold color={statusColor(r.handover_status)}>{r.handover_status||'-'}</TD>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableBox>
-            </>
-          ) : (
-            <>
-              <SearchBar placeholder="Cari session..."/>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:12}}>
-                {historyData.filter(s=>JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase())).map((s,i)=>(
-                  <div key={i} onClick={()=>loadHistDetail(s)}
-                    style={{border:'1px solid #eee',borderRadius:10,padding:14,cursor:'pointer',background:'#fff',transition:'0.2s'}}
-                    onMouseEnter={e=>e.currentTarget.style.borderColor='#800000'}
-                    onMouseLeave={e=>e.currentTarget.style.borderColor='#eee'}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                      <div>
-                        <div style={{fontWeight:900,fontSize:'0.8rem',color:'#800000'}}>{s.session_code}</div>
-                        <div style={{fontSize:'0.6rem',color:'#999',marginTop:2}}>{s.transporter_id}</div>
-                        <div style={{fontSize:'0.6rem',color:'#666',marginTop:4}}>Security: {s.security_name||'-'} | Kurir: {s.courier_name||'-'}</div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:900,fontSize:'1.1rem'}}>{s.total_sorted}</div>
-                        <div style={{fontSize:'0.55rem',color:'#999'}}>PAKET</div>
-                        <div style={{marginTop:4,background:'#dcfce7',color:'#166534',fontSize:'0.55rem',fontWeight:800,padding:'2px 7px',borderRadius:4}}>DONE</div>
-                      </div>
-                    </div>
-                    <div style={{fontSize:'0.58rem',color:'#ccc',marginTop:8,borderTop:'1px solid #f5f5f5',paddingTop:7}}>{formatWIB(s.closed_at)}</div>
-                  </div>
-                ))}
-                {historyData.length===0 && <div style={{gridColumn:'1/-1',textAlign:'center',color:'#ccc',padding:40,fontSize:'0.7rem'}}>Belum ada history handover</div>}
+              <div style={{fontSize:'0.82rem',fontWeight:800,letterSpacing:'-0.01em',lineHeight:1.1}}>
+                {selectedHistSession ? selectedHistSession.session_code
+                  : selectedHeader || activeMenu}
               </div>
-            </>
-          )}
+            </div>
+          </div>
+          {/* Topbar actions */}
+          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            {renderTopbarActions()}
+          </div>
         </div>
-      );
-    }
 
-    const isHO    = activeMenu === 'Handover';
-    const title   = isHO ? 'HANDOVER' : 'DISPATCH LOG';
-    return (
-      <div>
-        <Topbar title={title} actions={<>
-          <button onClick={()=>handleExportExcel(filteredDispatch,`${title}.xlsx`)} style={BW}><FileSpreadsheet size={12}/> Export</button>
-          <button onClick={()=>fetchDispatch(activeMenu)} style={BI}><RefreshCw size={13} className={dispatchLoading?'animate-spin':''}/></button>
-        </>}/>
-        <SearchBar/>
-        {dispatchLoading ? <div style={{textAlign:'center',padding:40,color:'#ccc',fontSize:'0.7rem'}}>Loading...</div> : (
-          <TableBox>
-            <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead>
-                <tr>
-                  {isHO ? <>
-                    <TH>ID</TH><TH>Session</TH><TH>AWB / DO Ref</TH><TH>Status</TH>
-                    <TH>Security</TH><TH>Kurir</TH><TH>No. Kendaraan</TH><TH>Handover At</TH>
-                  </> : <>
-                    <TH>ID</TH><TH>Session</TH><TH>Transporter</TH><TH>AWB / DO Ref</TH>
-                    <TH>Operator</TH><TH>Handover Status</TH><TH>Scanned At</TH>
-                  </>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDispatch.map((r,i)=>(
-                  <tr key={i} style={{borderBottom:'1px solid #f5f5f5',background:i%2===0?'#fff':'#fafafa'}}>
-                    {isHO ? <>
-                      <TD>{r.id}</TD>
-                      <TD bold color="#800000">{r.session_code}</TD>
-                      <TD>{r.tracking_reference||r.do_reference||'-'}</TD>
-                      <TD bold color={statusColor(r.status)}>{r.status}</TD>
-                      <TD>{r.security_name||'-'}</TD>
-                      <TD>{r.courier_name||'-'}</TD>
-                      <TD>{r.vehicle_number||'-'}</TD>
-                      <TD>{formatWIB(r.handover_at)}</TD>
-                    </> : <>
-                      <TD>{r.id}</TD>
-                      <TD bold color="#800000">{r.session_code}</TD>
-                      <TD>{r.transporter_id}</TD>
-                      <TD>{r.tracking_reference||r.do_reference||'-'}</TD>
-                      <TD>{r.operator}</TD>
-                      <TD bold color={statusColor(r.handover_status)}>{r.handover_status||'-'}</TD>
-                      <TD>{formatWIB(r.scanned_at)}</TD>
-                    </>}
-                  </tr>
-                ))}
-                {filteredDispatch.length===0 && <tr><td colSpan={8} style={{textAlign:'center',padding:30,color:'#ccc',fontSize:'0.65rem'}}>Tidak ada data</td></tr>}
-              </tbody>
-            </table>
-          </TableBox>
-        )}
+        {/* PAGE CONTENT */}
+        <div style={{padding:'20px 24px'}}>
+          {isDispatch ? renderDispatch() : renderInventoryOutbound()}
+        </div>
       </div>
-    );
-  };
 
-  /* ── RENDER MAIN CONTENT ── */
-  const renderContent = () => {
-    if (isDispatch) return renderDispatch();
+      {/* ADD LOCATION MODAL */}
+      {showAddForm && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',backdropFilter:'blur(6px)',
+          display:'flex',alignItems:'center',justifyContent:'center',zIndex:10000}}>
+          <div style={{background:'var(--surface)',padding:28,borderRadius:16,width:'90%',maxWidth:400,
+            boxShadow:'0 24px 48px rgba(0,0,0,0.15)',border:'1px solid var(--border)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+              <div style={{fontWeight:800,fontSize:'0.82rem'}}>Tambah Lokasi</div>
+              <button className="btn-icon" onClick={()=>setShowAddForm(false)}><X size={14}/></button>
+            </div>
+            <label style={{fontSize:'0.58rem',fontWeight:700,color:'var(--muted)',letterSpacing:'0.06em',textTransform:'uppercase',display:'block',marginBottom:5}}>Lokasi ID</label>
+            <input className="field" value={newLoc.id} onChange={e=>setNewLoc({...newLoc,id:e.target.value})}/>
+            <div style={{display:'flex',gap:10}}>
+              <div style={{flex:1}}>
+                <label style={{fontSize:'0.58rem',fontWeight:700,color:'var(--muted)',letterSpacing:'0.06em',textTransform:'uppercase',display:'block',marginBottom:5}}>Zone</label>
+                <input className="field" value={newLoc.zone} onChange={e=>setNewLoc({...newLoc,zone:e.target.value.toUpperCase()})}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{fontSize:'0.58rem',fontWeight:700,color:'var(--muted)',letterSpacing:'0.06em',textTransform:'uppercase',display:'block',marginBottom:5}}>Aisle</label>
+                <input className="field" type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc,aisle:e.target.value})}/>
+              </div>
+            </div>
+            <button className="btn primary" style={{width:'100%',justifyContent:'center',padding:'11px',marginTop:4,fontSize:'0.7rem'}}
+              onClick={async()=>{
+                try{
+                  await axios.post(`${API_BASE}?action=add_location`,{...newLoc,location_id:newLoc.id.toUpperCase()});
+                  showToast("Lokasi ditambahkan"); setShowAddForm(false); fetchData();
+                }catch{ showToast("Error","error"); }
+              }}>Simpan</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
+  /* ══ TOPBAR ACTIONS ══ */
+  function renderTopbarActions() {
     const isPicklistMenu = ['Picking','Packing','Explorer'].includes(activeMenu);
-
-    /* Actions toolbar */
-    const actions = <>
-      {activeMenu==='Master Lokasi' && masterTab==='database' && (
-        <button onClick={()=>setShowAddForm(true)} style={{...BW,background:'#000',color:'#fff'}}><Plus size={11}/> Add</button>
-      )}
-      {activeMenu==='Snapshoot' && (
-        <label style={{...BW,background:'#000',color:'#fff',cursor:'pointer'}}><Upload size={11}/> Upload
-          <input type="file" hidden onChange={handleFileUpload}/>
-        </label>
-      )}
-      {['1st Count','2nt Count','Snapshoot','Reconciliation'].includes(activeMenu) && (
-        <button onClick={()=>{ if(window.confirm("Hapus data?"))
+    if (isDispatch) {
+      if (activeMenu==='History' && selectedHistSession && histDetail) return <>
+        <button className="btn success" onClick={()=>handleExportExcel(histDetail,`Handover_${selectedHistSession.session_code}.xlsx`)}><FileSpreadsheet size={12}/>Excel</button>
+        <button className="btn" style={{color:'var(--orange)'}} onClick={printHandoverPdf}><FileText size={12}/>PDF</button>
+        <button className="btn-icon" onClick={()=>fetchDispatch(activeMenu)}><RefreshCw size={13} className={dispatchLoading?'spin':''}/></button>
+      </>;
+      if (activeMenu==='History') return <button className="btn-icon" onClick={()=>fetchDispatch(activeMenu)}><RefreshCw size={13}/></button>;
+      return <>
+        <button className="btn success" onClick={()=>handleExportExcel(filteredDispatch,`${activeMenu}.xlsx`)}><FileSpreadsheet size={12}/>Export</button>
+        <button className="btn-icon" onClick={()=>fetchDispatch(activeMenu)}><RefreshCw size={13} className={dispatchLoading?'spin':''}/></button>
+      </>;
+    }
+    return <>
+      {activeMenu==='Master Lokasi'&&masterTab==='database'&&<button className="btn primary" onClick={()=>setShowAddForm(true)}><Plus size={12}/>Add</button>}
+      {activeMenu==='Snapshoot'&&<label className="btn primary" style={{cursor:'pointer'}}><Upload size={12}/>Upload<input type="file" hidden onChange={handleFileUpload}/></label>}
+      {['1st Count','2nt Count','Snapshoot','Reconciliation'].includes(activeMenu)&&(
+        <button className="btn danger" onClick={()=>{if(window.confirm("Hapus data?"))
           axios.post(`${API_BASE}?action=clear_${activeMenu.includes('1st')?'first':activeMenu.includes('2nt')?'second':activeMenu.includes('Snap')?'snap':'recon'}`)
-            .then(fetchData);
-        }} style={{...BW,color:'#ef4444'}}><Trash2 size={11}/> Clear</button>
+          .then(fetchData);}}>
+          <Trash2 size={12}/>Clear
+        </button>
       )}
-      <button onClick={()=>handleExportExcel(isPicklistMenu ? (selectedHeader ? filteredData : picklistGroups) : data, `${activeMenu}.xlsx`)} style={{...BW,color:'#16a34a'}}>
-        <FileSpreadsheet size={11}/> Export
-      </button>
-      <button onClick={fetchData} style={BI}><RefreshCw size={13} className={loading?'animate-spin':''}/></button>
+      <button className="btn success" onClick={()=>handleExportExcel(isPicklistMenu?(selectedHeader?filteredData:picklistGroups):data,`${activeMenu}.xlsx`)}><FileSpreadsheet size={12}/>Export</button>
+      <button className="btn-icon" onClick={fetchData}><RefreshCw size={13} className={loading?'spin':''}/></button>
     </>;
+  }
 
-    const title = selectedHeader ? `${activeMenu} › ${selectedHeader}` : activeMenu.toUpperCase();
-
+  /* ══ SEARCH BAR ══ */
+  function SearchBar({ placeholder='Cari data...' }) {
     return (
-      <div>
-        <Topbar title={title} actions={actions}/>
-
-        {activeMenu==='Master Lokasi' && (
-          <div style={{display:'flex',gap:12,marginBottom:16,borderBottom:'1px solid #eee'}}>
-            {[['grid',<LayoutGrid size={11}/>,'Assign CC'],['database',<DbIcon size={11}/>,'Database Lokasi']].map(([t,ic,lb])=>(
-              <div key={t} onClick={()=>setMasterTab(t)} style={{padding:'8px 12px',cursor:'pointer',fontSize:'0.62rem',fontWeight:masterTab===t?800:400,color:masterTab===t?'#000':'#ccc',borderBottom:masterTab===t?'2px solid #000':'none',display:'flex',alignItems:'center',gap:5}}>
-                {ic} {lb}
-              </div>
-            ))}
+      <div className="search-wrap">
+        <Search size={13} className="search-icon"/>
+        <input className="search-inp" placeholder={placeholder}
+          value={searchInput} onChange={e=>setSearchInput(e.target.value)}/>
+        {searchInput && searchInput!==searchTerm && (
+          <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
+            <Loader2 size={12} className="spin" style={{color:'var(--muted2)'}}/>
           </div>
         )}
+      </div>
+    );
+  }
 
-        {activeMenu==='Explorer' && !selectedHeader && (
-          <div style={{display:'flex',gap:8,marginBottom:14}}>
-            {['active','completed'].map(t=>(
-              <button key={t} onClick={()=>setExplorerTab(t)}
-                style={{padding:'6px 16px',fontSize:'0.62rem',fontWeight:800,border:'none',borderRadius:6,cursor:'pointer',
-                  background:explorerTab===t?'#000':'#f5f5f5',color:explorerTab===t?'#fff':'#666'}}>
-                {t==='active'?'ACTIVE':'COMPLETED'}
-              </button>
-            ))}
-          </div>
-        )}
+  /* ══ PROGRESS BAR ══ */
+  function ProgBar({ value, max }) {
+    const pct = max>0 ? Math.min(100,Math.round(value/max*100)) : 0;
+    return (
+      <div style={{display:'flex',alignItems:'center',gap:7,flex:1,minWidth:80,maxWidth:180}}>
+        <div className="prog-track"><div className="prog-fill" style={{width:`${pct}%`,background:pct===100?'var(--green)':'#f59e0b'}}/></div>
+        <span style={{fontSize:'0.58rem',color:'var(--muted)',minWidth:28,textAlign:'right'}}>{pct}%</span>
+      </div>
+    );
+  }
 
-        {activeMenu!=='Print Label' && <SearchBar/>}
+  /* ══ TABLE BOX ══ */
+  function TableBox({ children }) {
+    return (
+      <div style={{border:'1px solid var(--border)',borderRadius:10,overflow:'auto',
+        maxHeight:'calc(100vh - 180px)',background:'var(--surface)',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+        {children}
+      </div>
+    );
+  }
 
-        {/* PICKLIST LIST VIEW */}
-        {isPicklistMenu && !selectedHeader ? (
-          <div style={{border:'1px solid #eee',borderRadius:8,overflow:'hidden'}}>
-            {/* list header */}
-            <div style={{display:'flex',padding:'7px 14px',background:'#fafafa',borderBottom:'1px solid #eee',gap:12,fontSize:'0.57rem',color:'#999',fontWeight:800,textTransform:'uppercase'}}>
-              <span style={{minWidth:20}}>#</span>
-              <span style={{minWidth:140}}>Picklist / Toko</span>
-              <div style={{display:'flex',gap:20,flex:1}}>
-                <span style={{minWidth:50}}>Qty Req</span>
-                <span style={{minWidth:50}}>Pick</span>
-                {(activeMenu==='Packing'||activeMenu==='Explorer') && <span style={{minWidth:50}}>Pack</span>}
-                {(activeMenu==='Packing'||activeMenu==='Explorer') && <span style={{flex:1}}>Progress</span>}
-              </div>
+  /* ══ DISPATCH ══ */
+  function renderDispatch() {
+    if (activeMenu==='History') {
+      if (selectedHistSession) {
+        return (
+          <>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8,
+              background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,
+              padding:'14px 16px',marginBottom:14,boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+              {[['Session',selectedHistSession.session_code],['Transporter',selectedHistSession.transporter_id],
+                ['Security',selectedHistSession.security_name||'-'],['Kurir',selectedHistSession.courier_name||'-'],
+                ['No. Kendaraan',selectedHistSession.vehicle_number||'-'],['Total',`${histDetail?.length||0} paket`]
+              ].map(([k,v])=>(
+                <div key={k}>
+                  <div style={{fontSize:'0.55rem',color:'var(--muted)',fontWeight:600,letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:2}}>{k}</div>
+                  <div style={{fontSize:'0.7rem',fontWeight:700}}>{v}</div>
+                </div>
+              ))}
             </div>
-            {(activeMenu==='Explorer'
-              ? filteredGroups.filter(h => explorerTab==='active' ? !h.allPacked : h.allPacked)
-              : filteredGroups
-            ).map((h,i)=><PicklistRow key={h.id} h={h} idx={i} mode={activeMenu}/>)}
-            {filteredGroups.length===0 && <div style={{textAlign:'center',padding:30,color:'#ccc',fontSize:'0.65rem'}}>Tidak ada data</div>}
-          </div>
-        ) : activeMenu==='Print Label' ? (
-          <PrintLabelPanel data={data} selectedPcb={selectedPcb} setSelectedPcb={setSelectedPcb}
-            selectedBoxHuid={selectedBoxHuid} setSelectedBoxHuid={setSelectedBoxHuid}
-            boxOptions={boxOptions} fetchBoxByPcb={fetchBoxByPcb} loading={loading}/>
-        ) : activeMenu==='Master Lokasi' && masterTab==='grid' ? (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(90px,1fr))',gap:10}}>
-            {filteredData.map((r,i)=>(
-              <div key={i} style={{border:'1px solid #eee',padding:12,display:'flex',flexDirection:'column',alignItems:'center',borderRadius:8,background:'#fff',gap:8}}>
-                <span style={{fontWeight:800,fontSize:'0.65rem'}}>{r?.unique_id}</span>
-                <div onClick={()=>handleToggle(r.unique_id,r.assign)} style={{width:34,height:18,background:r.assign==='open'?'#16a34a':'#eee',borderRadius:10,position:'relative',cursor:'pointer'}}>
-                  <div style={{width:12,height:12,background:'#fff',borderRadius:'50%',position:'absolute',top:3,left:r.assign==='open'?19:3,transition:'0.2s'}}/>
+            <TableBox>
+              <table className="data-table">
+                <thead><tr><th>No.</th><th>No. AWB</th><th>Status</th></tr></thead>
+                <tbody>
+                  {(histDetail||[]).map((r,i)=>(
+                    <tr key={i}><td className="mono">{i+1}</td>
+                      <td style={{fontFamily:"'DM Mono',monospace",fontSize:'0.62rem'}}>{r.tracking_reference||r.do_reference||'-'}</td>
+                      <td><span className={`tag ${r.handover_status==='CONFIRMED'?'tag-green':r.handover_status==='NOT_FOUND'?'tag-amber':'tag-red'}`}>{r.handover_status||'-'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableBox>
+          </>
+        );
+      }
+
+      return (
+        <>
+          <SearchBar placeholder="Cari session, kurir, security..."/>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
+            {historyData.filter(s=>JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase())).map((s,i)=>(
+              <div key={i} className="hist-card" onClick={()=>loadHistDetail(s)}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:800,fontSize:'0.75rem',letterSpacing:'-0.01em',marginBottom:2}}>{s.session_code}</div>
+                    <div style={{fontSize:'0.6rem',color:'var(--muted)',marginBottom:6}}>{s.transporter_id}</div>
+                    <div style={{fontSize:'0.6rem',color:'var(--muted)'}}>
+                      <span style={{marginRight:10}}>👤 {s.security_name||'-'}</span>
+                      <span>🚚 {s.courier_name||'-'}</span>
+                    </div>
+                  </div>
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    <div style={{fontSize:'1.3rem',fontWeight:900,letterSpacing:'-0.03em',lineHeight:1}}>{s.total_sorted}</div>
+                    <div style={{fontSize:'0.55rem',color:'var(--muted)',marginBottom:4}}>paket</div>
+                    <span className="tag tag-green">DONE</span>
+                  </div>
+                </div>
+                <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid var(--border2)',
+                  fontSize:'0.58rem',color:'var(--muted2)',fontFamily:"'DM Mono',monospace"}}>
+                  {formatWIB(s.closed_at)}
                 </div>
               </div>
             ))}
+            {historyData.length===0 && (
+              <div style={{gridColumn:'1/-1',textAlign:'center',padding:48,color:'var(--muted2)',fontSize:'0.68rem'}}>
+                Belum ada history handover
+              </div>
+            )}
+          </div>
+        </>
+      );
+    }
+
+    const isHO = activeMenu==='Handover';
+    return (
+      <>
+        <SearchBar/>
+        {dispatchLoading ? (
+          <div style={{textAlign:'center',padding:48,color:'var(--muted2)'}}>
+            <Loader2 size={20} className="spin" style={{marginBottom:8}}/>
+            <div style={{fontSize:'0.65rem'}}>Memuat data...</div>
           </div>
         ) : (
           <TableBox>
-            <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead>
-                <tr>
-                  {activeMenu==='Master Lokasi' ? <><TH>Lokasi</TH><TH>Zone</TH><TH>Aisle</TH><TH>Unique</TH><TH>Status</TH></>
-                  : activeMenu==='Reconciliation' ? <><TH>Lokasi</TH><TH>Artikel</TH><TH>Snap</TH><TH>1st</TH><TH>2nd</TH><TH>Diff</TH><TH>Status</TH></>
-                  : activeMenu==='Picking' ? <><TH>ID</TH><TH>Product</TH><TH>Loc</TH><TH>Qty</TH><TH>Picker</TH><TH>Time</TH><TH>Status</TH></>
-                  : activeMenu==='Packing' ? <><TH>ID</TH><TH>Box#</TH><TH>Product</TH><TH>Qty</TH><TH>Packer</TH><TH>Time</TH><TH>HUID</TH><TH>Status</TH></>
-                  : activeMenu==='Explorer' ? <><TH>SKU</TH><TH>Desc</TH><TH>Req</TH><TH>Pick</TH><TH>Pack</TH><TH>Status</TH></>
-                  : activeMenu==='Snapshoot' ? <><TH>Lokasi</TH><TH>Artikel</TH><TH>Qty Snap</TH><TH>Description</TH></>
-                  : <><TH>Location</TH><TH>Artikel</TH><TH>Description</TH><TH>Qty</TH><TH>Timestamp</TH><TH>Operator</TH></>}
-                </tr>
-              </thead>
+            <table className="data-table">
+              <thead><tr>
+                {isHO
+                  ? ['ID','Session','AWB / DO Ref','Status','Security','Kurir','No. Kendaraan','Handover At'].map(h=><th key={h}>{h}</th>)
+                  : ['ID','Session','Transporter','AWB / DO Ref','Operator','Status','Scanned At'].map(h=><th key={h}>{h}</th>)
+                }
+              </tr></thead>
               <tbody>
-                {filteredData.map((r,i)=>(
-                  <tr key={i} style={{borderBottom:'1px solid #f5f5f5',background:i%2===0?'#fff':'#fafafa'}}>
-                    {activeMenu==='Master Lokasi' ? <>
-                      <TD>{r?.location_id}</TD><TD>{r?.zone}</TD><TD>{r?.aisle}</TD><TD>{r?.unique_id}</TD>
-                      <TD bold color={r?.assign==='open'?'#16a34a':'#ef4444'}>{r?.assign?.toUpperCase()}</TD>
-                    </> : activeMenu==='Reconciliation' ? <>
-                      <TD>{r?.location_id}</TD><TD>{r?.artikel}</TD>
-                      <TD>{r?.qty_snap}</TD><TD>{r?.qty_1st}</TD><TD>{r?.qty_2nd}</TD>
-                      <TD bold color={(Number(r?.qty_2nd||r?.qty_1st||0)-Number(r?.qty_snap||0))===0?'#16a34a':'#ef4444'}>
-                        {Number(r?.qty_2nd||r?.qty_1st||0)-Number(r?.qty_snap||0)}
-                      </TD>
-                      <TD>{r?.final_status}</TD>
-                    </> : activeMenu==='Picking' ? <>
-                      <TD>{r?.id}</TD><TD>{r?.product_id}</TD><TD>{r?.location_id}</TD>
-                      <TD>{r?.qty_actual}</TD><TD>{r?.picker_name}</TD>
-                      <TD>{formatWIB(r?.scanned_at)}</TD><TD>{r?.status}</TD>
-                    </> : activeMenu==='Packing' ? <>
-                      <TD>{r?.id}</TD><TD>{r?.box_number}</TD><TD>{r?.product_id}</TD>
-                      <TD>{r?.qty_packed}</TD><TD>{r?.scanned_by}</TD>
-                      <TD>{formatWIB(r?.scanned_at)}</TD><TD>{r?.huid}</TD><TD>{r?.status}</TD>
-                    </> : activeMenu==='Explorer' ? <>
-                      <TD>{r?.sku}</TD>
-                      <td style={{padding:'9px 12px',fontSize:'0.6rem',color:'#999',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{getDesc(r)}</td>
-                      <TD>{r?.qty_req}</TD><TD>{r?.qty_picked}</TD><TD>{r?.qty_packed}</TD><TD>{r?.status}</TD>
-                    </> : activeMenu==='Snapshoot' ? <>
-                      <TD>{r?.location_id}</TD><TD>{r?.artikel}</TD><TD>{r?.qty_snap}</TD>
-                      <td style={{padding:'9px 12px',fontSize:'0.6rem',color:'#999'}}>{getDesc(r)}</td>
+                {filteredDispatch.map((r,i)=>(
+                  <tr key={i}>
+                    {isHO ? <>
+                      <td className="mono">{r.id}</td>
+                      <td style={{fontWeight:700,color:'var(--text)'}}>{r.session_code}</td>
+                      <td style={{fontFamily:"'DM Mono',monospace",fontSize:'0.62rem'}}>{r.tracking_reference||r.do_reference||'-'}</td>
+                      <td><span className={`tag ${r.status==='CONFIRMED'?'tag-green':r.status==='NOT_FOUND'?'tag-amber':'tag-red'}`}>{r.status}</span></td>
+                      <td>{r.security_name||'-'}</td><td>{r.courier_name||'-'}</td>
+                      <td>{r.vehicle_number||'-'}</td>
+                      <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r.handover_at)}</td>
                     </> : <>
-                      <TD>{r?.location_id}</TD><TD>{r?.artikel}</TD>
-                      <td style={{padding:'9px 12px',fontSize:'0.6rem',color:'#999'}}>{getDesc(r)}</td>
-                      <TD>{r?.qty_1st||r?.qty_2nd||r?.qty}</TD>
-                      <TD>{formatWIB(r?.scanned_at||r?.timestamp)}</TD><TD>{r?.operator}</TD>
+                      <td className="mono">{r.id}</td>
+                      <td style={{fontWeight:700}}>{r.session_code}</td>
+                      <td>{r.transporter_id}</td>
+                      <td style={{fontFamily:"'DM Mono',monospace",fontSize:'0.62rem'}}>{r.tracking_reference||r.do_reference||'-'}</td>
+                      <td>{r.operator}</td>
+                      <td><span className={`tag ${r.handover_status==='CONFIRMED'?'tag-green':r.handover_status==='NOT_FOUND'?'tag-amber':'tag-red'}`}>{r.handover_status||'-'}</span></td>
+                      <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r.scanned_at)}</td>
                     </>}
                   </tr>
                 ))}
+                {filteredDispatch.length===0&&<tr><td colSpan={8} style={{textAlign:'center',padding:32,color:'var(--muted2)'}}>Tidak ada data</td></tr>}
               </tbody>
             </table>
           </TableBox>
         )}
-      </div>
+      </>
     );
-  };
+  }
 
-  /* ── ROOT ── */
-  return (
-    <div style={{fontFamily:'Lexend,sans-serif',background:'#fff',minHeight:'100vh',fontSize:'0.72rem'}}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.animate-spin{animation:spin 1s linear infinite}`}</style>
-      {toast.show && (
-        <div style={{position:'fixed',top:16,left:'50%',transform:'translateX(-50%)',
-          background:toast.type==='success'?'#16a34a':'#ef4444',color:'#fff',
-          padding:'9px 20px',borderRadius:50,fontWeight:800,zIndex:9999,fontSize:'0.65rem',boxShadow:'0 4px 12px rgba(0,0,0,0.15)'}}>
-          {toast.msg}
-        </div>
-      )}
+  /* ══ INVENTORY / OUTBOUND ══ */
+  function renderInventoryOutbound() {
+    const isPicklist = ['Picking','Packing','Explorer'].includes(activeMenu);
 
-      <Sidebar/>
-
-      {/* Main content — shifts right when sidebar open on desktop */}
-      <div style={{marginLeft: !isMobile && sidebarOpen ? 240 : 0, transition:'margin-left 0.25s ease', padding:'24px 28px', minHeight:'100vh'}}>
-        {renderContent()}
-      </div>
-
-      {/* Add Location Modal */}
-      {showAddForm && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:10000}}>
-          <div style={{background:'#fff',padding:28,borderRadius:16,width:'85%',maxWidth:400,boxShadow:'0 20px 40px rgba(0,0,0,0.2)'}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
-              <span style={{fontWeight:900,fontSize:'0.85rem'}}>ADD LOCATION</span>
-              <button onClick={()=>setShowAddForm(false)} style={{border:'none',background:'none',cursor:'pointer'}}><X size={18}/></button>
-            </div>
-            <label style={LB}>LOKASI ID</label>
-            <input style={SI} value={newLoc.id} onChange={e=>setNewLoc({...newLoc,id:e.target.value})}/>
-            <div style={{display:'flex',gap:10}}>
-              <div style={{flex:1}}><label style={LB}>ZONE</label><input style={SI} value={newLoc.zone} onChange={e=>setNewLoc({...newLoc,zone:e.target.value.toUpperCase()})}/></div>
-              <div style={{flex:1}}><label style={LB}>AISLE</label><input style={SI} type="number" value={newLoc.aisle} onChange={e=>setNewLoc({...newLoc,aisle:e.target.value})}/></div>
-            </div>
-            <button onClick={async()=>{
-              try {
-                await axios.post(`${API_BASE}?action=add_location`,{...newLoc,location_id:newLoc.id.toUpperCase()});
-                showToast("Added!"); setShowAddForm(false); fetchData();
-              } catch { showToast("Error!","error"); }
-            }} style={{width:'100%',background:'#000',color:'#fff',padding:12,border:'none',borderRadius:8,fontWeight:800,cursor:'pointer',fontSize:'0.72rem',marginTop:8}}>
-              SAVE
-            </button>
+    if (activeMenu==='Master Lokasi') {
+      return (
+        <>
+          <div style={{display:'flex',gap:8,marginBottom:14,background:'var(--surface)',borderRadius:8,padding:4,border:'1px solid var(--border)',width:'fit-content'}}>
+            {[['grid',<LayoutGrid size={11}/>,'Assign CC'],['database',<DbIcon size={11}/>,'Database']].map(([t,ic,lb])=>(
+              <button key={t} onClick={()=>setMasterTab(t)}
+                style={{padding:'5px 12px',borderRadius:6,border:'none',cursor:'pointer',fontSize:'0.62rem',fontWeight:600,
+                  display:'flex',alignItems:'center',gap:5,fontFamily:'inherit',
+                  background:masterTab===t?'var(--text)':'transparent',color:masterTab===t?'#fff':'var(--muted)',
+                  transition:'all 0.15s'}}>
+                {ic}{lb}
+              </button>
+            ))}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+          {masterTab==='database' && <SearchBar/>}
+          {masterTab==='grid' ? (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(86px,1fr))',gap:8}}>
+              {filteredData.map((r,i)=>(
+                <div key={i} style={{background:'var(--surface)',border:'1px solid var(--border)',padding:'10px 10px',
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:8,borderRadius:9}}>
+                  <span style={{fontWeight:700,fontSize:'0.62rem',textAlign:'center'}}>{r?.unique_id}</span>
+                  <div className="toggle" onClick={()=>handleToggle(r.unique_id,r.assign)}
+                    style={{background:r.assign==='open'?'var(--green)':'var(--border)'}}>
+                    <div className="toggle-dot" style={{left:r.assign==='open'?'19px':'3px'}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <TableBox>
+              <table className="data-table">
+                <thead><tr><th>Lokasi</th><th>Zone</th><th>Aisle</th><th>Unique ID</th><th>Status</th></tr></thead>
+                <tbody>{filteredData.map((r,i)=>(
+                  <tr key={i}>
+                    <td style={{fontWeight:600}}>{r?.location_id}</td><td>{r?.zone}</td><td>{r?.aisle}</td>
+                    <td className="mono">{r?.unique_id}</td>
+                    <td><span className={`tag ${r?.assign==='open'?'tag-green':'tag-red'}`}>{r?.assign?.toUpperCase()}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </TableBox>
+          )}
+        </>
+      );
+    }
 
-/* ── SHARED STYLES ── */
-const SI = { width:'100%',padding:'10px 12px',border:'1px solid #eee',marginBottom:10,borderRadius:8,fontFamily:'inherit',fontSize:'0.72rem',boxSizing:'border-box' };
-const BW = { background:'#fff',border:'1px solid #eee',padding:'6px 12px',borderRadius:6,fontSize:'0.62rem',display:'flex',alignItems:'center',gap:5,cursor:'pointer' };
-const BI = { background:'#fff',border:'1px solid #eee',padding:'6px 8px',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center' };
-const LB = { fontSize:'0.58rem',fontWeight:800,color:'#999',marginBottom:5,display:'block',letterSpacing:'0.05em' };
+    if (activeMenu==='Print Label') {
+      return <PrintLabelPanel data={data} selectedPcb={selectedPcb} setSelectedPcb={setSelectedPcb}
+        selectedBoxHuid={selectedBoxHuid} setSelectedBoxHuid={setSelectedBoxHuid}
+        boxOptions={boxOptions} fetchBoxByPcb={fetchBoxByPcb} loading={loading}/>;
+    }
+
+    if (isPicklist && !selectedHeader) {
+      const showPack = activeMenu==='Packing'||activeMenu==='Explorer';
+      return (
+        <>
+          {activeMenu==='Explorer' && (
+            <div style={{display:'flex',gap:6,marginBottom:12}}>
+              {['active','completed'].map(t=>(
+                <button key={t} className={`tab ${explorerTab===t?'on':'off'}`} onClick={()=>setExplorerTab(t)}>
+                  {t==='active'?'Active':'Completed'}
+                </button>
+              ))}
+            </div>
+          )}
+          <SearchBar placeholder="Cari picklist atau nama toko..."/>
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+            {/* Header row */}
+            <div style={{display:'flex',padding:'7px 14px',background:'var(--bg)',borderBottom:'1px solid var(--border)',
+              gap:12,fontSize:'0.57rem',color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+              <span style={{minWidth:22}}>#</span>
+              <span style={{minWidth:145}}>Picklist / Toko</span>
+              <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
+                <span style={{minWidth:52}}>Qty Req</span>
+                <span style={{minWidth:52}}>Pick</span>
+                {showPack&&<span style={{minWidth:52}}>Pack</span>}
+                {showPack&&<span style={{flex:1}}>Progress</span>}
+              </div>
+              {activeMenu==='Explorer'&&<span style={{minWidth:50}}>Status</span>}
+            </div>
+            {filteredGroups.map((h,i)=>(
+              <div key={h.id} className="plist-row" onClick={()=>setSelectedHeader(h.id)}>
+                <span style={{fontSize:'0.58rem',color:'var(--muted2)',minWidth:22,textAlign:'right'}}>{i+1}</span>
+                <div style={{minWidth:145,maxWidth:160}}>
+                  <div style={{fontSize:'0.68rem',fontWeight:800,letterSpacing:'-0.01em',fontFamily:"'DM Mono',monospace",color:'var(--text)'}}>{h.id}</div>
+                  <div style={{fontSize:'0.58rem',color:'var(--muted)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
+                </div>
+                <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
+                  {[h.qtyReq,h.qtyPick,...(showPack?[h.qtyPack]:[])].map((v,j)=>(
+                    <span key={j} style={{minWidth:52,fontSize:'0.7rem',fontWeight:700}}>{v||0}</span>
+                  ))}
+                  {showPack&&<ProgBar value={h.qtyPack} max={h.qtyPick||h.qtyReq||1}/>}
+                </div>
+                {activeMenu==='Explorer'&&(
+                  <span className={`tag ${h.allPacked?'tag-green':'tag-amber'}`} style={{minWidth:50,textAlign:'center'}}>
+                    {h.allPacked?'DONE':'OPEN'}
+                  </span>
+                )}
+                <ChevronRight size={13} style={{color:'var(--muted2)',flexShrink:0}}/>
+              </div>
+            ))}
+            {filteredGroups.length===0&&<div style={{textAlign:'center',padding:36,color:'var(--muted2)',fontSize:'0.65rem'}}>Tidak ada data</div>}
+          </div>
+        </>
+      );
+    }
+
+    /* Generic table */
+    return (
+      <>
+        <SearchBar/>
+        <TableBox>
+          <table className="data-table">
+            <thead><tr>
+              {activeMenu==='Reconciliation' ? ['Lokasi','Artikel','Snap','1st','2nd','Diff','Status'].map(h=><th key={h}>{h}</th>)
+              : activeMenu==='Picking' ? ['ID','Product','Lokasi','Qty','Picker','Waktu','Status'].map(h=><th key={h}>{h}</th>)
+              : activeMenu==='Packing' ? ['ID','Box#','Product','Qty','Packer','Waktu','HUID','Status'].map(h=><th key={h}>{h}</th>)
+              : activeMenu==='Explorer' ? ['SKU','Deskripsi','Req','Pick','Pack','Status'].map(h=><th key={h}>{h}</th>)
+              : activeMenu==='Snapshoot' ? ['Lokasi','Artikel','Qty Snap','Deskripsi'].map(h=><th key={h}>{h}</th>)
+              : ['Location','Artikel','Deskripsi','Qty','Timestamp','Operator'].map(h=><th key={h}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {filteredData.map((r,i)=>(
+                <tr key={i}>
+                  {activeMenu==='Reconciliation' ? <>
+                    <td style={{fontFamily:"'DM Mono',monospace",fontSize:'0.62rem'}}>{r?.location_id}</td>
+                    <td>{r?.artikel}</td><td>{r?.qty_snap}</td><td>{r?.qty_1st}</td><td>{r?.qty_2nd}</td>
+                    <td>
+                      {(() => {const d=Number(r?.qty_2nd||r?.qty_1st||0)-Number(r?.qty_snap||0);
+                        return <span style={{fontWeight:800,color:d===0?'var(--green)':'var(--red)'}}>{d>0?`+${d}`:d}</span>})()}
+                    </td>
+                    <td>{r?.final_status}</td>
+                  </> : activeMenu==='Picking' ? <>
+                    <td className="mono">{r?.id}</td><td>{r?.product_id}</td>
+                    <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{r?.location_id}</td>
+                    <td style={{fontWeight:700}}>{r?.qty_actual}</td><td>{r?.picker_name}</td>
+                    <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r?.scanned_at)}</td>
+                    <td>{r?.status}</td>
+                  </> : activeMenu==='Packing' ? <>
+                    <td className="mono">{r?.id}</td><td>{r?.box_number}</td><td>{r?.product_id}</td>
+                    <td style={{fontWeight:700}}>{r?.qty_packed}</td><td>{r?.scanned_by}</td>
+                    <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r?.scanned_at)}</td>
+                    <td className="mono" style={{fontSize:'0.6rem'}}>{r?.huid}</td><td>{r?.status}</td>
+                  </> : activeMenu==='Explorer' ? <>
+                    <td className="mono" style={{fontSize:'0.6rem'}}>{r?.sku}</td>
+                    <td style={{fontSize:'0.6rem',color:'var(--muted)',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis'}}>{getDesc(r)}</td>
+                    <td>{r?.qty_req}</td><td>{r?.qty_picked}</td><td>{r?.qty_packed}</td><td>{r?.status}</td>
+                  </> : activeMenu==='Snapshoot' ? <>
+                    <td className="mono" style={{fontSize:'0.6rem'}}>{r?.location_id}</td>
+                    <td>{r?.artikel}</td><td style={{fontWeight:700}}>{r?.qty_snap}</td>
+                    <td style={{fontSize:'0.6rem',color:'var(--muted)'}}>{getDesc(r)}</td>
+                  </> : <>
+                    <td className="mono" style={{fontSize:'0.6rem'}}>{r?.location_id}</td>
+                    <td>{r?.artikel}</td>
+                    <td style={{fontSize:'0.6rem',color:'var(--muted)'}}>{getDesc(r)}</td>
+                    <td style={{fontWeight:700}}>{r?.qty_1st||r?.qty_2nd||r?.qty}</td>
+                    <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r?.scanned_at||r?.timestamp)}</td>
+                    <td>{r?.operator}</td>
+                  </>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableBox>
+      </>
+    );
+  }
+}
