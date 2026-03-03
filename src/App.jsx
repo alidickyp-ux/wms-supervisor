@@ -115,24 +115,38 @@ export default function App() {
   }, [newLoc.id, newLoc.zone, newLoc.aisle]);
 
   const formatWIB = (s) => {
-    if (!s || s === '-') return '-';
-    try {
-      const str = String(s).trim();
-      const p = n => String(n).padStart(2, '0');
-      let iso = str.replace(' ', 'T');
-      // Normalise offset pendek: +07 -> +07:00
-      iso = iso.replace(/([+-])(\d{2})$/, '$1$2:00');
-      // Tidak ada TZ sama sekali -> anggap WIB, tambah +07:00
-      if (iso.indexOf('Z') === -1 && iso.indexOf('+') === -1 && iso.lastIndexOf('-') <= 7)
-        iso += '+07:00';
-      const d = new Date(iso);
-      if (isNaN(d)) return str;
-      // Selalu UTC -> WIB (+7 jam)
-      const w = new Date(d.getTime() + 7 * 3600000);
-      return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
-        +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
-    } catch { return String(s); }
-  };
+  if (!s || s === '-') return '-';
+  try {
+    const str = String(s).trim();
+    const p = n => String(n).padStart(2, '0');
+
+    // Cek apakah ada timezone info
+    const hasPlus  = str.indexOf('+') !== -1;
+    const hasZ     = str.indexOf('Z') !== -1;
+    const hasTZ    = hasPlus || hasZ;
+
+    let iso = str.replace(' ', 'T');
+
+    if (!hasTZ) {
+      // timestamp without time zone → nilai sudah WIB, jangan tambah apapun
+      // Parse langsung komponen string, hindari ambiguitas browser
+      const parts = iso.split('T');
+      const dateParts = parts[0].split('-');   // [yyyy, mm, dd]
+      const timeParts = (parts[1] || '').split(':'); // [HH, MM, SS...]
+      return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]||'00'}:${timeParts[1]||'00'}`;
+    }
+
+    // Ada timezone → parse lalu konversi ke UTC+7
+    // Normalise offset pendek: +07 → +07:00
+    iso = iso.replace(/([+-])(\d{2})$/, '$1$2:00');
+    const d = new Date(iso);
+    if (isNaN(d)) return str;
+    const w = new Date(d.getTime() + 7 * 3600000);
+    return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
+      +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
+
+  } catch { return String(s); }
+};
 
   const showToast = (msg, type='success') => {
     setToast({ show:true, msg, type });
