@@ -14,7 +14,7 @@ const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web';
 const API_DISPATCH = 'https://wms-neon-bridge.vercel.app/api/dispatch';
 
 const NAV = [
-  { key:'inventory', label:'Inventory',  icon:<BoxSelect size={13}/>,   children:['Master Lokasi','Snapshoot','1st Count','2nt Count','Reconciliation'] },
+  { key:'inventory', label:'Inventory',  icon:<BoxSelect size={13}/>,   children:['Master Lokasi','Snapshoot','1st Count','2nt Count','Reconciliation','Pick Compliance'] },
   { key:'outbound',  label:'Outbound',   icon:<Truck size={13}/>,        children:['Picking','Packing','Explorer','Print Label'] },
   { key:'dispatch',  label:'Dispatch',   icon:<Package size={13}/>,      children:['Dispatch Log','Handover','History'] },
 ];
@@ -158,9 +158,9 @@ export default function App() {
         const tm = {
           'Master Lokasi': masterTab==='database'?'master_all':'master',
           'Snapshoot':'snapshot_list','1st Count':'first','2nt Count':'second','Reconciliation':'recon',
-          'Picking':'picking_transactions','Packing':'packing_transactions','Explorer':'outbound_explorer'
+          'Picking':'picking_transactions','Packing':'packing_transactions','Explorer':'outbound_explorer','Pick Compliance':'picking_compliance'
         };
-        const api = ['Picking','Packing','Explorer'].includes(activeMenu) ? API_OUTBOUND : API_BASE;
+        const api = ['Picking','Packing','Explorer','Pick Compliance'].includes(activeMenu) ? API_OUTBOUND : API_BASE;
         const res = await axios.get(`${api}?action=get_data&target=${tm[activeMenu]}`);
         setData(res.data?.data || []);
       }
@@ -237,7 +237,7 @@ export default function App() {
     const map = {};
     data.forEach(r => {
       const k = r.picklist_number; if(!k) return;
-      if(!map[k]) map[k]={ id:k, name:r.nama_customer||r.nama_toko||'-', qtyReq:0, qtyPick:0, qtyPack:0, allPacked:true };
+      if(!map[k]) map[k]={ id:k, name:r.nama_customer||r.nama_toko||r.customer||'-', qtyReq:0, qtyPick:0, qtyPack:0, allPacked:true };
       map[k].qtyReq  += Number(r.qty_req||r.qty_order||0);
       map[k].qtyPick += Number(r.qty_picked||r.qty_actual||0);
       map[k].qtyPack += Number(r.qty_packed||0);
@@ -820,6 +820,7 @@ export default function App() {
   /* ══ INVENTORY / OUTBOUND ══ */
   function renderInventoryOutbound() {
     const isPicklist = ['Picking','Packing','Explorer'].includes(activeMenu);
+    const isCompliance = activeMenu === 'Pick Compliance';
 
     if (activeMenu==='Master Lokasi') {
       return (
@@ -873,7 +874,7 @@ export default function App() {
         boxOptions={boxOptions} fetchBoxByPcb={fetchBoxByPcb} loading={loading}/>;
     }
 
-    if (isPicklist && !selectedHeader) {
+    if (isPicklist && !selectedHeader && !isCompliance) {
       const showPack = activeMenu==='Packing'||activeMenu==='Explorer';
       return (
         <>
@@ -939,6 +940,7 @@ export default function App() {
               : activeMenu==='Picking' ? ['ID','Product','Lokasi','Qty','Picker','Waktu','Status'].map(h=><th key={h}>{h}</th>)
               : activeMenu==='Packing' ? ['ID','Box#','Product','Qty','Packer','Waktu','HUID','Status'].map(h=><th key={h}>{h}</th>)
               : activeMenu==='Explorer' ? ['SKU','Deskripsi','Req','Pick','Pack','Status'].map(h=><th key={h}>{h}</th>)
+              : activeMenu==='Pick Compliance' ? ['ID','Picklist','Product','Lokasi','Deskripsi','Qty Pick','Status Awal','Status Akhir','Keterangan','Final Reason','Dibuat'].map(h=><th key={h}>{h}</th>)
               : activeMenu==='Snapshoot' ? ['Lokasi','Artikel','Qty Snap','Deskripsi'].map(h=><th key={h}>{h}</th>)
               : ['Location','Artikel','Deskripsi','Qty','Timestamp','Operator'].map(h=><th key={h}>{h}</th>)}
             </tr></thead>
