@@ -117,18 +117,43 @@ export default function App() {
   const formatWIB = (s) => {
     if (!s || s === '-') return '-';
     try {
-      // Jika tidak ada timezone info (timestamp without time zone dari DB),
-      // anggap sudah WIB — langsung parse tanpa tambah offset
-      const hasTimezone = /Z|[+-]\d{2}:?\d{2}$/.test(String(s));
-      const d = new Date(hasTimezone ? s : s.replace(' ', 'T'));
-      if (isNaN(d)) return String(s);
+      const str = String(s);
       const p = n => String(n).padStart(2,'0');
-      if (hasTimezone) {
-        // Ada timezone (UTC) → konversi ke WIB +7
+
+      // Cek apakah ada offset +07 / +07:00 (sudah WIB dari DB)
+      // Contoh: "2026-03-03 19:02:00.123+07" atau "2026-03-03T19:02:00+07:00"
+      const hasWIBOffset = /[+-]07:?00?$/.test(str) || /\+07$/.test(str);
+
+      // Cek apakah ada timezone info apapun (Z, +00, -05, dst)
+      const hasAnyTZ = /Z|[+-]\d{2}:?\d{2}$/.test(str);
+
+      // Parse string — ganti spasi dengan T agar valid ISO
+      const normalized = str.replace(' ', 'T');
+      const d = new Date(normalized);
+      if (isNaN(d)) return str;
+
+      if (hasWIBOffset) {
+        // Sudah WIB — ambil jam dari UTC+7 (sama dengan getUTC + 7)
+        const w = new Date(d.getTime());
+        // Karena offset +07 sudah dikompensasi browser saat parse,
+        // gunakan local time langsung (browser Indonesia) ATAU UTC+7
+        // Paling aman: parse manual dari string
+        const parts = str.replace('T',' ').split(/[- :+.]/);
+        // parts: [year, month, day, hour, min, sec, ...]
+        if (parts.length >= 5) {
+          return `${parts[2]}/${parts[1]}/${parts[0]} ${parts[3]}:${parts[4]}`;
+        }
+        return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      } else if (hasAnyTZ) {
+        // Ada timezone lain (misal UTC/Z) → konversi ke WIB +7
         const w = new Date(d.getTime() + 7*3600000);
         return `${p(w.getUTCDate())}/${p(w.getUTCMonth()+1)}/${w.getUTCFullYear()} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
       } else {
-        // Tanpa timezone → sudah local, langsung format
+        // Tanpa timezone (timestamp without time zone) → sudah WIB, format langsung
+        const parts = str.replace('T',' ').split(/[\s\-:\.]/);
+        if (parts.length >= 5) {
+          return `${parts[2]}/${parts[1]}/${parts[0]} ${parts[3]}:${parts[4]}`;
+        }
         return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
       }
     } catch { return String(s); }
