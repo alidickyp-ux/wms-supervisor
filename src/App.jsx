@@ -20,12 +20,13 @@ const NAV = [
 ];
 
 /* ── DEBOUNCE HOOK ── */
-function useDebounce(value, delay=400) {
-  const [dv, setDv] = useState(value);
+function useDebounce(value, delay=600, minLength=8) {
+  const [dv, setDv] = useState('');
   useEffect(() => {
+    if (value.length > 0 && value.length < minLength) return;
     const t = setTimeout(() => setDv(value), delay);
     return () => clearTimeout(t);
-  }, [value, delay]);
+  }, [value, delay, minLength]);
   return dv;
 }
 
