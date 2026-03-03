@@ -40,6 +40,35 @@ function useDebounce(value) {
   return dv;
 }
 
+/* ── SEARCH BAR (standalone — jangan taruh di dalam App) ── */
+function SearchBar({ value, onChange, debounced, placeholder='Cari data...' }) {
+  const inputRef = React.useRef(null);
+  return (
+    <div className="search-wrap">
+      <Search size={13} className="search-icon"/>
+      <input
+        ref={inputRef}
+        className="search-inp"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        autoComplete="off"
+      />
+      {value.length >= 8 && value !== debounced && (
+        <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
+          <Loader2 size={12} className="spin" style={{color:'var(--muted2)'}}/>
+        </div>
+      )}
+      {value.length > 0 && value.length < 8 && (
+        <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',
+          fontSize:'0.55rem',color:'var(--muted2)',fontWeight:600}}>
+          min {8 - value.length} lagi
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser]             = useState(null);
@@ -288,28 +317,58 @@ export default function App() {
      LOGIN PAGE
   ══════════════════════════════════════════ */
   if (!isLoggedIn) return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0a0a0a',fontFamily:"'DM Sans', 'Lexend', sans-serif"}}>
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',
+      fontFamily:"'DM Sans','Lexend',sans-serif",position:'relative',overflow:'hidden',
+      background:'linear-gradient(135deg, #f5f3ef 0%, #ede8e0 50%, #e8e2d8 100%)'}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700;900&family=DM+Mono:wght@400;500&display=swap');
-        .login-card{width:360px;background:#111;border:1px solid #222;border-radius:16px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6)}
-        .login-inp{width:100%;background:#1a1a1a;border:1px solid #2a2a2a;color:#fff;padding:12px 14px;border-radius:8px;font-family:inherit;font-size:0.78rem;margin-bottom:10px;box-sizing:border-box;outline:none;transition:border 0.2s}
-        .login-inp:focus{border-color:#444}
-        .login-inp::placeholder{color:#555}
-        .login-btn{width:100%;background:#fff;color:#000;padding:13px;border:none;border-radius:8px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;transition:opacity 0.2s;display:flex;align-items:center;justify-content:center;gap:8px}
-        .login-btn:hover{opacity:0.9}
+        .lbg-blob1{position:absolute;width:600px;height:600px;border-radius:50%;
+          background:radial-gradient(circle,rgba(210,196,175,0.5) 0%,transparent 70%);
+          top:-200px;right:-100px;pointer-events:none}
+        .lbg-blob2{position:absolute;width:400px;height:400px;border-radius:50%;
+          background:radial-gradient(circle,rgba(185,168,145,0.3) 0%,transparent 70%);
+          bottom:-150px;left:-80px;pointer-events:none}
+        .lcard{width:380px;background:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.9);
+          border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.08),0 2px 8px rgba(0,0,0,0.04);
+          backdrop-filter:blur(20px);position:relative;z-index:1}
+        .linp{width:100%;background:rgba(255,255,255,0.6);border:1px solid rgba(0,0,0,0.1);color:#111;
+          padding:12px 14px;border-radius:10px;font-family:inherit;font-size:0.76rem;margin-bottom:10px;
+          box-sizing:border-box;outline:none;transition:all 0.2s}
+        .linp:focus{border-color:rgba(0,0,0,0.3);background:rgba(255,255,255,0.9);box-shadow:0 0 0 3px rgba(0,0,0,0.05)}
+        .linp::placeholder{color:#aaa}
+        .lbtn{width:100%;background:#1a1a1a;color:#fff;padding:13px;border:none;border-radius:10px;
+          font-weight:700;font-size:0.76rem;cursor:pointer;letter-spacing:0.04em;
+          transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit}
+        .lbtn:hover{background:#333;transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,0.15)}
+        .lbtn:active{transform:translateY(0)}
       `}</style>
-      <div className="login-card">
-        <div style={{padding:'32px 32px 24px',borderBottom:'1px solid #1e1e1e'}}>
-          <div style={{fontSize:'0.6rem',letterSpacing:'0.15em',color:'#555',fontWeight:600,textTransform:'uppercase',marginBottom:6}}>WMS Management</div>
-          <div style={{fontSize:'1.4rem',fontWeight:900,color:'#fff',letterSpacing:'-0.02em'}}>COOL Dashboard</div>
+      <div className="lbg-blob1"/><div className="lbg-blob2"/>
+      <div className="lcard">
+        <div style={{padding:'32px 32px 24px',borderBottom:'1px solid rgba(0,0,0,0.06)',
+          background:'linear-gradient(135deg,rgba(255,255,255,0.4),rgba(255,255,255,0.1))'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+            <div style={{width:36,height:36,borderRadius:10,background:'#1a1a1a',
+              display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <Package size={18} style={{color:'#fff'}}/>
+            </div>
+            <div>
+              <div style={{fontSize:'0.55rem',letterSpacing:'0.14em',color:'#999',fontWeight:600,textTransform:'uppercase'}}>WMS System</div>
+              <div style={{fontSize:'1.1rem',fontWeight:900,color:'#111',letterSpacing:'-0.02em',lineHeight:1.1}}>COOL Dashboard</div>
+            </div>
+          </div>
+          <div style={{fontSize:'0.65rem',color:'#888',lineHeight:1.5}}>
+            Silakan masuk untuk mengakses sistem manajemen gudang.
+          </div>
         </div>
-        <div style={{padding:'28px 32px 32px'}}>
-          <input className="login-inp" placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)}/>
-          <input className="login-inp" type="password" placeholder="Password" value={password}
+        <div style={{padding:'24px 32px 32px'}}>
+          <div style={{fontSize:'0.58rem',fontWeight:700,color:'#aaa',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5}}>Username</div>
+          <input className="linp" placeholder="Masukkan username" value={username} onChange={e=>setUsername(e.target.value)}/>
+          <div style={{fontSize:'0.58rem',fontWeight:700,color:'#aaa',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5}}>Password</div>
+          <input className="linp" type="password" placeholder="Masukkan password" value={password}
             onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
-          <div style={{height:4}}/>
-          <button className="login-btn" onClick={handleLogin}>
-            {loginLoading ? <Loader2 size={15} className="spin"/> : 'MASUK'}
+          <div style={{height:8}}/>
+          <button className="lbtn" onClick={handleLogin}>
+            {loginLoading ? <Loader2 size={15} className="spin"/> : 'Masuk →'}
           </button>
         </div>
       </div>
@@ -614,20 +673,6 @@ export default function App() {
   }
 
   /* ══ SEARCH BAR ══ */
-  function SearchBar({ placeholder='Cari data...' }) {
-    return (
-      <div className="search-wrap">
-        <Search size={13} className="search-icon"/>
-        <input className="search-inp" placeholder={placeholder}
-          value={searchInput} onChange={e=>setSearchInput(e.target.value)}/>
-        {searchInput.length >= 8 && searchInput !== searchTerm && (
-          <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
-            <Loader2 size={12} className="spin" style={{color:'var(--muted2)'}}/>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   /* ══ PROGRESS BAR ══ */
   function ProgBar({ value, max }) {
@@ -688,7 +733,7 @@ export default function App() {
 
       return (
         <>
-          <SearchBar placeholder="Cari session, kurir, security..."/>
+          <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari session, kurir, security..."/>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
             {historyData.filter(s=>JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase())).map((s,i)=>(
               <div key={i} className="hist-card" onClick={()=>loadHistDetail(s)}>
@@ -726,7 +771,7 @@ export default function App() {
     const isHO = activeMenu==='Handover';
     return (
       <>
-        <SearchBar/>
+        <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm}/>
         {dispatchLoading ? (
           <div style={{textAlign:'center',padding:48,color:'var(--muted2)'}}>
             <Loader2 size={20} className="spin" style={{marginBottom:8}}/>
@@ -790,7 +835,7 @@ export default function App() {
               </button>
             ))}
           </div>
-          {masterTab==='database' && <SearchBar/>}
+          {masterTab==='database' && <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm}/>}
           {masterTab==='grid' ? (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(86px,1fr))',gap:8}}>
               {filteredData.map((r,i)=>(
@@ -841,7 +886,7 @@ export default function App() {
               ))}
             </div>
           )}
-          <SearchBar placeholder="Cari picklist atau nama toko..."/>
+          <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari picklist atau nama toko..."/>
           <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
             {/* Header row */}
             <div style={{display:'flex',padding:'7px 14px',background:'var(--bg)',borderBottom:'1px solid var(--border)',
@@ -886,7 +931,7 @@ export default function App() {
     /* Generic table */
     return (
       <>
-        <SearchBar/>
+        <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm}/>
         <TableBox>
           <table className="data-table">
             <thead><tr>
