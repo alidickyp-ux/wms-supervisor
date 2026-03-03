@@ -117,11 +117,21 @@ export default function App() {
   const formatWIB = (s) => {
     if (!s || s === '-') return '-';
     try {
-      const d = new Date(s); if (isNaN(d)) return s;
-      const w = new Date(d.getTime() + 7*3600000);
+      // Jika tidak ada timezone info (timestamp without time zone dari DB),
+      // anggap sudah WIB — langsung parse tanpa tambah offset
+      const hasTimezone = /Z|[+-]\d{2}:?\d{2}$/.test(String(s));
+      const d = new Date(hasTimezone ? s : s.replace(' ', 'T'));
+      if (isNaN(d)) return String(s);
       const p = n => String(n).padStart(2,'0');
-      return `${p(w.getUTCDate())}/${p(w.getUTCMonth()+1)}/${w.getUTCFullYear()} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
-    } catch { return s; }
+      if (hasTimezone) {
+        // Ada timezone (UTC) → konversi ke WIB +7
+        const w = new Date(d.getTime() + 7*3600000);
+        return `${p(w.getUTCDate())}/${p(w.getUTCMonth()+1)}/${w.getUTCFullYear()} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
+      } else {
+        // Tanpa timezone → sudah local, langsung format
+        return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      }
+    } catch { return String(s); }
   };
 
   const showToast = (msg, type='success') => {
@@ -940,7 +950,7 @@ export default function App() {
               : activeMenu==='Picking' ? ['ID','Product','Lokasi','Qty','Picker','Waktu','Status'].map(h=><th key={h}>{h}</th>)
               : activeMenu==='Packing' ? ['ID','Box#','Product','Qty','Packer','Waktu','HUID','Status'].map(h=><th key={h}>{h}</th>)
               : activeMenu==='Explorer' ? ['SKU','Deskripsi','Req','Pick','Pack','Status'].map(h=><th key={h}>{h}</th>)
-              : activeMenu==='Pick Compliance' ? ['ID','Picklist','Product','Lokasi','Deskripsi','Qty Pick','Status Awal','Status Akhir','Keterangan','Final Reason','Dibuat'].map(h=><th key={h}>{h}</th>)
+              : activeMenu==='Pick Compliance' ? ['ID','Picklist','Product','Lokasi','Deskripsi','Qty','Keterangan','Status Awal','Status Akhir','Reason','Final Reason','Dibuat'].map(h=><th key={h}>{h}</th>)
               : activeMenu==='Snapshoot' ? ['Lokasi','Artikel','Qty Snap','Deskripsi'].map(h=><th key={h}>{h}</th>)
               : ['Location','Artikel','Deskripsi','Qty','Timestamp','Operator'].map(h=><th key={h}>{h}</th>)}
             </tr></thead>
