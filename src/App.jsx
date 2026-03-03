@@ -97,6 +97,7 @@ export default function App() {
   const [historyData, setHistoryData]         = useState([]);
   const [selectedHistSession, setSelectedHistSession] = useState(null);
   const [histDetail, setHistDetail]           = useState(null);
+  const [histSignature, setHistSignature]     = useState({ sig_security: null, sig_kurir: null });
 
   const [selectedPcb, setSelectedPcb]         = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
@@ -115,38 +116,24 @@ export default function App() {
   }, [newLoc.id, newLoc.zone, newLoc.aisle]);
 
   const formatWIB = (s) => {
-  if (!s || s === '-') return '-';
-  try {
-    const str = String(s).trim();
-    const p = n => String(n).padStart(2, '0');
-
-    // Cek apakah ada timezone info
-    const hasPlus  = str.indexOf('+') !== -1;
-    const hasZ     = str.indexOf('Z') !== -1;
-    const hasTZ    = hasPlus || hasZ;
-
-    let iso = str.replace(' ', 'T');
-
-    if (!hasTZ) {
-      // timestamp without time zone → nilai sudah WIB, jangan tambah apapun
-      // Parse langsung komponen string, hindari ambiguitas browser
-      const parts = iso.split('T');
-      const dateParts = parts[0].split('-');   // [yyyy, mm, dd]
-      const timeParts = (parts[1] || '').split(':'); // [HH, MM, SS...]
-      return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]||'00'}:${timeParts[1]||'00'}`;
-    }
-
-    // Ada timezone → parse lalu konversi ke UTC+7
-    // Normalise offset pendek: +07 → +07:00
-    iso = iso.replace(/([+-])(\d{2})$/, '$1$2:00');
-    const d = new Date(iso);
-    if (isNaN(d)) return str;
-    const w = new Date(d.getTime() + 7 * 3600000);
-    return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
-      +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
-
-  } catch { return String(s); }
-};
+    if (!s || s === '-') return '-';
+    try {
+      const str = String(s).trim();
+      const p = n => String(n).padStart(2, '0');
+      let iso = str.replace(' ', 'T');
+      // Normalise offset pendek: +07 -> +07:00
+      iso = iso.replace(/([+-])(\d{2})$/, '$1$2:00');
+      // Tidak ada TZ sama sekali -> anggap WIB, tambah +07:00
+      if (iso.indexOf('Z') === -1 && iso.indexOf('+') === -1 && iso.lastIndexOf('-') <= 7)
+        iso += '+07:00';
+      const d = new Date(iso);
+      if (isNaN(d)) return str;
+      // Selalu UTC -> WIB (+7 jam)
+      const w = new Date(d.getTime() + 7 * 3600000);
+      return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
+        +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
+    } catch { return String(s); }
+  };
 
   const showToast = (msg, type='success') => {
     setToast({ show:true, msg, type });
@@ -292,9 +279,14 @@ export default function App() {
 
   const loadHistDetail = async (session) => {
     setSelectedHistSession(session);
+    setHistSignature({ sig_security: null, sig_kurir: null });
     try {
-      const res = await axios.get(`${API_DISPATCH}?action=get_data&target=session_log&session_code=${session.session_code}`);
-      setHistDetail(res.data?.data || []);
+      const [logRes, sigRes] = await Promise.all([
+        axios.get(`${API_DISPATCH}?action=get_data&target=session_log&session_code=${session.session_code}`),
+        axios.get(`${API_DISPATCH}?action=get_data&target=session_signature&session_code=${session.session_code}`)
+      ]);
+      setHistDetail(logRes.data?.data || []);
+      if (sigRes.data?.status === 'success') setHistSignature(sigRes.data.data);
     } catch { showToast("Gagal load detail","error"); }
   };
 
@@ -330,8 +322,20 @@ export default function App() {
     <table><thead><tr><th style="width:40px">No.</th><th>No. AWB</th><th style="width:110px">Status</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="signs">
-      <div><div style="font-weight:700">Security</div><div class="sb"></div><div class="sn">( ${s.security_name||'_____________'} )</div></div>
-      <div><div style="font-weight:700">Kurir</div><div class="sb"></div><div class="sn">( ${s.courier_name||'_____________'} )</div></div>
+      <div>
+        <div style="font-weight:700;margin-bottom:6px">Security</div>
+        ${histSignature.sig_security
+          ? `<img src="${histSignature.sig_security}" style="width:100%;height:80px;object-fit:contain;border:1px solid #ccc;border-radius:4px"/>`
+          : '<div class="sb"></div>'}
+        <div class="sn">( ${s.security_name||'_____________'} )</div>
+      </div>
+      <div>
+        <div style="font-weight:700;margin-bottom:6px">Kurir</div>
+        ${histSignature.sig_kurir
+          ? `<img src="${histSignature.sig_kurir}" style="width:100%;height:80px;object-fit:contain;border:1px solid #ccc;border-radius:4px"/>`
+          : '<div class="sb"></div>'}
+        <div class="sn">( ${s.courier_name||'_____________'} )</div>
+      </div>
     </div>
     <script>window.onload=()=>window.print()<\/script></body></html>`;
     const w = window.open('','_blank'); w.document.write(html); w.document.close();
@@ -751,6 +755,33 @@ export default function App() {
                 </tbody>
               </table>
             </TableBox>
+
+            {/* Signature area */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:16}}>
+              {['security','kurir'].map(role => {
+                const sig = role==='security' ? histSignature.sig_security : histSignature.sig_kurir;
+                const name = role==='security' ? selectedHistSession?.security_name : selectedHistSession?.courier_name;
+                return (
+                  <div key={role} style={{border:'1px solid var(--border)',borderRadius:10,padding:14,background:'var(--surface)'}}>
+                    <div style={{fontSize:'0.6rem',fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>
+                      TTD {role === 'security' ? 'Security' : 'Kurir'}
+                    </div>
+                    {sig ? (
+                      <img src={sig} alt={`Tanda tangan ${role}`}
+                        style={{width:'100%',height:80,objectFit:'contain',borderRadius:6,background:'#fafaf8'}}/>
+                    ) : (
+                      <div style={{height:80,background:'var(--bg)',borderRadius:6,display:'flex',alignItems:'center',
+                        justifyContent:'center',fontSize:'0.6rem',color:'var(--muted2)'}}>
+                        Belum ada tanda tangan
+                      </div>
+                    )}
+                    <div style={{fontSize:'0.6rem',color:'var(--muted)',textAlign:'center',marginTop:6,fontStyle:'italic'}}>
+                      ( {name||'—'} )
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </>
         );
       }
