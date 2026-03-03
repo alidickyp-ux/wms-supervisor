@@ -132,39 +132,6 @@ export default function App() {
       return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
         +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
     } catch { return String(s); }
-  }; const formatWIB = (s) => {
-    if (!s || s === '-') return '-';
-    try {
-      const str = String(s).trim();
-      const p   = n => String(n).padStart(2, '0');
-
-      // Apakah string punya offset +07 eksplisit? (Android / DB dengan timezone WIB)
-      const hasWIBOffset = str.indexOf('+07') !== -1;
-      // Apakah ada timezone info sama sekali? (Z, +00, +07, -05, dst)
-      const hasTZ = str.indexOf('Z') !== -1 || str.indexOf('+') !== -1 || 
-                    (str.lastIndexOf('-') > 7); // ada minus setelah tanggal = offset negatif
-
-      let iso = str.replace(' ', 'T');
-
-      if (hasWIBOffset) {
-        // Sudah WIB — browser akan parse +07 dengan benar
-        // getUTC() = jam WIB karena offset sudah dikompensasi
-        const d = new Date(iso);
-        if (isNaN(d)) return str;
-        return `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
-      } else if (hasTZ) {
-        // Ada timezone lain (misal +00 / Z dari Neon) → konversi UTC ke WIB
-        const d = new Date(iso);
-        if (isNaN(d)) return str;
-        const w = new Date(d.getTime() + 7 * 3600000);
-        return `${p(w.getUTCDate())}/${p(w.getUTCMonth()+1)}/${w.getUTCFullYear()} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
-      } else {
-        // Tidak ada timezone (picking_compliance dll) → anggap sudah WIB, format langsung
-        const d = new Date(iso + 'Z'); // parse sebagai UTC literal
-        if (isNaN(d)) return str;
-        return `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
-      }
-    } catch { return String(s); }
   };
 
   const showToast = (msg, type='success') => {
