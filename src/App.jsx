@@ -117,44 +117,52 @@ export default function App() {
   const formatWIB = (s) => {
     if (!s || s === '-') return '-';
     try {
-      const str = String(s);
-      const p = n => String(n).padStart(2,'0');
-
-      // Cek apakah ada offset +07 / +07:00 (sudah WIB dari DB)
-      // Contoh: "2026-03-03 19:02:00.123+07" atau "2026-03-03T19:02:00+07:00"
-      const hasWIBOffset = /[+-]07:?00?$/.test(str) || /\+07$/.test(str);
-
-      // Cek apakah ada timezone info apapun (Z, +00, -05, dst)
-      const hasAnyTZ = /Z|[+-]\d{2}:?\d{2}$/.test(str);
-
-      // Parse string — ganti spasi dengan T agar valid ISO
-      const normalized = str.replace(' ', 'T');
-      const d = new Date(normalized);
+      const str = String(s).trim();
+      const p = n => String(n).padStart(2, '0');
+      let iso = str.replace(' ', 'T');
+      // Normalise offset pendek: +07 -> +07:00
+      iso = iso.replace(/([+-])(\d{2})$/, '$1$2:00');
+      // Tidak ada TZ sama sekali -> anggap WIB, tambah +07:00
+      if (iso.indexOf('Z') === -1 && iso.indexOf('+') === -1 && iso.lastIndexOf('-') <= 7)
+        iso += '+07:00';
+      const d = new Date(iso);
       if (isNaN(d)) return str;
+      // Selalu UTC -> WIB (+7 jam)
+      const w = new Date(d.getTime() + 7 * 3600000);
+      return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
+        +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
+    } catch { return String(s); }
+  }; const formatWIB = (s) => {
+    if (!s || s === '-') return '-';
+    try {
+      const str = String(s).trim();
+      const p   = n => String(n).padStart(2, '0');
+
+      // Apakah string punya offset +07 eksplisit? (Android / DB dengan timezone WIB)
+      const hasWIBOffset = str.indexOf('+07') !== -1;
+      // Apakah ada timezone info sama sekali? (Z, +00, +07, -05, dst)
+      const hasTZ = str.indexOf('Z') !== -1 || str.indexOf('+') !== -1 || 
+                    (str.lastIndexOf('-') > 7); // ada minus setelah tanggal = offset negatif
+
+      let iso = str.replace(' ', 'T');
 
       if (hasWIBOffset) {
-        // Sudah WIB — ambil jam dari UTC+7 (sama dengan getUTC + 7)
-        const w = new Date(d.getTime());
-        // Karena offset +07 sudah dikompensasi browser saat parse,
-        // gunakan local time langsung (browser Indonesia) ATAU UTC+7
-        // Paling aman: parse manual dari string
-        const parts = str.replace('T',' ').split(/[- :+.]/);
-        // parts: [year, month, day, hour, min, sec, ...]
-        if (parts.length >= 5) {
-          return `${parts[2]}/${parts[1]}/${parts[0]} ${parts[3]}:${parts[4]}`;
-        }
-        return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-      } else if (hasAnyTZ) {
-        // Ada timezone lain (misal UTC/Z) → konversi ke WIB +7
-        const w = new Date(d.getTime() + 7*3600000);
+        // Sudah WIB — browser akan parse +07 dengan benar
+        // getUTC() = jam WIB karena offset sudah dikompensasi
+        const d = new Date(iso);
+        if (isNaN(d)) return str;
+        return `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+      } else if (hasTZ) {
+        // Ada timezone lain (misal +00 / Z dari Neon) → konversi UTC ke WIB
+        const d = new Date(iso);
+        if (isNaN(d)) return str;
+        const w = new Date(d.getTime() + 7 * 3600000);
         return `${p(w.getUTCDate())}/${p(w.getUTCMonth()+1)}/${w.getUTCFullYear()} ${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
       } else {
-        // Tanpa timezone (timestamp without time zone) → sudah WIB, format langsung
-        const parts = str.replace('T',' ').split(/[\s\-:\.]/);
-        if (parts.length >= 5) {
-          return `${parts[2]}/${parts[1]}/${parts[0]} ${parts[3]}:${parts[4]}`;
-        }
-        return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        // Tidak ada timezone (picking_compliance dll) → anggap sudah WIB, format langsung
+        const d = new Date(iso + 'Z'); // parse sebagai UTC literal
+        if (isNaN(d)) return str;
+        return `${p(d.getUTCDate())}/${p(d.getUTCMonth()+1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
       }
     } catch { return String(s); }
   };
