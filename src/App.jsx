@@ -20,13 +20,23 @@ const NAV = [
 ];
 
 /* ── DEBOUNCE HOOK ── */
-function useDebounce(value, delay=600, minLength=8) {
+function useDebounce(value) {
   const [dv, setDv] = useState('');
   useEffect(() => {
-    if (value.length > 0 && value.length < minLength) return;
-    const t = setTimeout(() => setDv(value), delay);
+    // Kurang dari 8 karakter: langsung reset hasil (tampilkan semua)
+    if (value.length > 0 && value.length < 8) {
+      setDv('');
+      return;
+    }
+    // 0 karakter (kosong): reset
+    if (value.length === 0) {
+      setDv('');
+      return;
+    }
+    // 8+ karakter: tunggu 700ms baru filter
+    const t = setTimeout(() => setDv(value), 700);
     return () => clearTimeout(t);
-  }, [value, delay, minLength]);
+  }, [value]);
   return dv;
 }
 
@@ -45,7 +55,7 @@ export default function App() {
   const [data, setData]     = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState('');
-  const searchTerm = useDebounce(searchInput, 400);
+  const searchTerm = useDebounce(searchInput);
   const [selectedHeader, setSelectedHeader] = useState(null);
   const [masterTab, setMasterTab]     = useState('grid');
   const [explorerTab, setExplorerTab] = useState('active');
@@ -610,7 +620,7 @@ export default function App() {
         <Search size={13} className="search-icon"/>
         <input className="search-inp" placeholder={placeholder}
           value={searchInput} onChange={e=>setSearchInput(e.target.value)}/>
-        {searchInput && searchInput!==searchTerm && (
+        {searchInput.length >= 8 && searchInput !== searchTerm && (
           <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
             <Loader2 size={12} className="spin" style={{color:'var(--muted2)'}}/>
           </div>
