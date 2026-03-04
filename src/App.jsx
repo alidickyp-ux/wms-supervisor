@@ -118,26 +118,19 @@ export default function App() {
   const formatWIB = (s) => {
     if (!s || s === '-') return '-';
     try {
-      const str = String(s).trim();
-      // Detect UTC: ends with Z, or offset +00 / +00:00
-      const isUTC = str.endsWith('Z') || /[+]00:?0{0,2}$/.test(str);
-      // Strip microseconds, Z, offset suffix
-      const clean = str.replace('T',' ')
-        .replace(/\.\d+/,'').replace(/Z$/,'')
-        .replace(/[+-]\d{2}:?\d{0,2}$/,'').trim();
+      // Nilai di DB = jam scan sebenarnya (UTC label tapi nilai lokal)
+      // Cukup strip suffix .microseconds, Z, offset — ambil jam langsung
+      const clean = String(s).trim()
+        .replace('T', ' ')
+        .replace(/\.\d+/, '')
+        .replace(/Z$/, '')
+        .replace(/[+-]\d{2}:?\d{0,2}$/, '')
+        .trim();
       const [datePart, timePart = '00:00'] = clean.split(' ');
-      const [yyyy, mm, dd] = datePart.split('-').map(Number);
-      const [hh, mi]       = timePart.split(':').map(Number);
-      const p = n => String(n).padStart(2,'0');
-      if (isUTC) {
-        // Konversi UTC → WIB (+7 jam) pakai Date agar auto handle lintas hari/bulan
-        const d = new Date(Date.UTC(yyyy, mm-1, dd, hh, mi));
-        d.setUTCHours(d.getUTCHours() + 7);
-        return p(d.getUTCDate())+'/'+p(d.getUTCMonth()+1)+'/'+d.getUTCFullYear()
-          +' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes());
-      }
-      // Tanpa TZ atau +07 → nilai sudah WIB, ambil langsung
-      return p(dd)+'/'+p(mm)+'/'+yyyy+' '+p(hh)+':'+p(mi);
+      const [yyyy, mm, dd] = datePart.split('-');
+      const [hh, mi]       = timePart.split(':');
+      const p = n => String(n).padStart(2, '0');
+      return `${p(dd)}/${p(mm)}/${yyyy} ${p(hh)}:${p(mi)}`;
     } catch { return String(s); }
   }
 
