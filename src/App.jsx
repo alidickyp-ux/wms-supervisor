@@ -119,21 +119,27 @@ export default function App() {
     if (!s || s === '-') return '-';
     try {
       const str = String(s).trim();
-      const p = n => String(n).padStart(2, '0');
-      let iso = str.replace(' ', 'T');
-      // Normalise offset pendek: +07 -> +07:00
-      iso = iso.replace(/([+-])(\d{2})$/, '$1$2:00');
-      // Tidak ada TZ sama sekali -> anggap WIB, tambah +07:00
-      if (iso.indexOf('Z') === -1 && iso.indexOf('+') === -1 && iso.lastIndexOf('-') <= 7)
-        iso += '+07:00';
-      const d = new Date(iso);
-      if (isNaN(d)) return str;
-      // Selalu UTC -> WIB (+7 jam)
-      const w = new Date(d.getTime() + 7 * 3600000);
-      return p(w.getUTCDate())+'/'+p(w.getUTCMonth()+1)+'/'+w.getUTCFullYear()
-        +' '+p(w.getUTCHours())+':'+p(w.getUTCMinutes());
+      // Detect UTC: ends with Z, or offset +00 / +00:00
+      const isUTC = str.endsWith('Z') || /[+]00:?0{0,2}$/.test(str);
+      // Strip microseconds, Z, offset suffix
+      const clean = str.replace('T',' ')
+        .replace(/\.\d+/,'').replace(/Z$/,'')
+        .replace(/[+-]\d{2}:?\d{0,2}$/,'').trim();
+      const [datePart, timePart = '00:00'] = clean.split(' ');
+      const [yyyy, mm, dd] = datePart.split('-').map(Number);
+      const [hh, mi]       = timePart.split(':').map(Number);
+      const p = n => String(n).padStart(2,'0');
+      if (isUTC) {
+        // Konversi UTC → WIB (+7 jam) pakai Date agar auto handle lintas hari/bulan
+        const d = new Date(Date.UTC(yyyy, mm-1, dd, hh, mi));
+        d.setUTCHours(d.getUTCHours() + 7);
+        return p(d.getUTCDate())+'/'+p(d.getUTCMonth()+1)+'/'+d.getUTCFullYear()
+          +' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes());
+      }
+      // Tanpa TZ atau +07 → nilai sudah WIB, ambil langsung
+      return p(dd)+'/'+p(mm)+'/'+yyyy+' '+p(hh)+':'+p(mi);
     } catch { return String(s); }
-  };
+  }
 
   const showToast = (msg, type='success') => {
     setToast({ show:true, msg, type });
@@ -944,34 +950,36 @@ export default function App() {
           )}
           <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari picklist atau nama toko..."/>
           <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
-            {/* Header row */}
+            {/* Header row — sticky */}
             <div style={{display:'flex',padding:'7px 14px',background:'var(--bg)',borderBottom:'1px solid var(--border)',
-              gap:12,fontSize:'0.57rem',color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
-              <span style={{minWidth:22}}>#</span>
-              <span style={{minWidth:145}}>Picklist / Toko</span>
+              gap:12,fontSize:'0.57rem',color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',
+              position:'sticky',top:0,zIndex:3}}>
+              <span style={{minWidth:22,flexShrink:0}}>#</span>
+              <span style={{minWidth:145,flexShrink:0}}>Picklist / Toko</span>
               <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
-                <span style={{minWidth:52}}>Qty Req</span>
-                <span style={{minWidth:52}}>Pick</span>
-                {showPack&&<span style={{minWidth:52}}>Pack</span>}
+                <span style={{minWidth:52,flexShrink:0}}>Qty Req</span>
+                <span style={{minWidth:52,flexShrink:0}}>Pick</span>
+                {showPack&&<span style={{minWidth:52,flexShrink:0}}>Pack</span>}
                 {showPack&&<span style={{flex:1}}>Progress</span>}
               </div>
-              {activeMenu==='Explorer'&&<span style={{minWidth:50}}>Status</span>}
+              {activeMenu==='Explorer'&&<span style={{minWidth:62,textAlign:'right',flexShrink:0}}>Status</span>}
             </div>
             {filteredGroups.map((h,i)=>(
               <div key={h.id} className="plist-row" onClick={()=>setSelectedHeader(h.id)}>
-                <span style={{fontSize:'0.58rem',color:'var(--muted2)',minWidth:22,textAlign:'right'}}>{i+1}</span>
-                <div style={{minWidth:145,maxWidth:160}}>
+                <span style={{fontSize:'0.58rem',color:'var(--muted2)',minWidth:22,flexShrink:0,textAlign:'right'}}>{i+1}</span>
+                <div style={{minWidth:145,maxWidth:145,flexShrink:0}}>
                   <div style={{fontSize:'0.68rem',fontWeight:800,letterSpacing:'-0.01em',fontFamily:"'DM Mono',monospace",color:'var(--text)'}}>{h.id}</div>
                   <div style={{fontSize:'0.58rem',color:'var(--muted)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
                 </div>
                 <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
                   {[h.qtyReq,h.qtyPick,...(showPack?[h.qtyPack]:[])].map((v,j)=>(
-                    <span key={j} style={{minWidth:52,fontSize:'0.7rem',fontWeight:700}}>{v||0}</span>
+                    <span key={j} style={{minWidth:52,flexShrink:0,fontSize:'0.7rem',fontWeight:700}}>{v||0}</span>
                   ))}
                   {showPack&&<ProgBar value={h.qtyPack} max={h.qtyPick||h.qtyReq||1}/>}
                 </div>
                 {activeMenu==='Explorer'&&(
-                  <span className={`tag ${h.allPacked?'tag-green':'tag-amber'}`} style={{minWidth:50,textAlign:'center'}}>
+                  <span className={`tag ${h.allPacked?'tag-green':'tag-amber'}`}
+                    style={{minWidth:62,textAlign:'center',flexShrink:0}}>
                     {h.allPacked?'DONE':'OPEN'}
                   </span>
                 )}
