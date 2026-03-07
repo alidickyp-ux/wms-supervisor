@@ -14,6 +14,8 @@ export default function DispatchPage({ activeMenu, showToast }) {
   const [detailLoading, setDetailLoading]         = useState(false);
   const [searchInput, setSearchInput]             = useState('');
   const searchTerm = useDebounce(searchInput);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo]     = useState('');
 
   // Cache per session_code — klik kedua langsung dari memori
   const detailCache = useRef({});
@@ -226,44 +228,98 @@ export default function DispatchPage({ activeMenu, showToast }) {
 
     return (
       <PageWrapper>
-        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:12}}>
-          <button className="btn-icon" onClick={()=>fetchData('History')}><RefreshCw size={13} className={loading?'spin':''}/></button>
+        {/* ── TOOLBAR ── */}
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14,alignItems:'center'}}>
+          {/* Date range */}
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface)',
+            border:'1px solid var(--border)',borderRadius:8,padding:'5px 10px'}}>
+            <span style={{fontSize:'0.58rem',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}}>Dari</span>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+              style={{border:'none',outline:'none',fontSize:'0.65rem',fontFamily:'inherit',
+                background:'transparent',color:'var(--text)',cursor:'pointer'}}/>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface)',
+            border:'1px solid var(--border)',borderRadius:8,padding:'5px 10px'}}>
+            <span style={{fontSize:'0.58rem',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}}>Sampai</span>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+              style={{border:'none',outline:'none',fontSize:'0.65rem',fontFamily:'inherit',
+                background:'transparent',color:'var(--text)',cursor:'pointer'}}/>
+          </div>
+          {(dateFrom||dateTo) && (
+            <button className="btn danger" style={{padding:'5px 10px'}}
+              onClick={()=>{setDateFrom('');setDateTo('');}}>
+              ✕ Reset
+            </button>
+          )}
+          <div style={{flex:1}}/>
+          <button className="btn-icon" onClick={()=>fetchData('History')}>
+            <RefreshCw size={13} className={loading?'spin':''}/>
+          </button>
         </div>
+
         <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari session, kurir, security..."/>
-        {loading ? <CardSkeleton count={6}/> : (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
-            {historyData
-              .filter(s => !searchTerm || JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase()))
-              .map((s,i)=>(
-              <div key={i} className="hist-card" onClick={()=>loadHistDetail(s)}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontWeight:800,fontSize:'0.75rem',letterSpacing:'-0.01em',marginBottom:2}}>{s.session_code}</div>
-                    <div style={{fontSize:'0.6rem',color:'var(--muted)',marginBottom:6}}>{s.transporter_id}</div>
-                    <div style={{fontSize:'0.6rem',color:'var(--muted)'}}>
-                      <span style={{marginRight:10}}>👤 {s.security_name||'-'}</span>
-                      <span>🚚 {s.courier_name||'-'}</span>
+
+        {loading ? <CardSkeleton count={6}/> : (() => {
+          // Filter by search + date range
+          const filtered = historyData.filter(s => {
+            if (searchTerm && !JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase())) return false;
+            if (dateFrom || dateTo) {
+              // closed_at contoh: "2026-03-05T10:41:46.698Z" atau "2026-03-05 10:41:46"
+              const raw = String(s.closed_at||'').trim().replace('T',' ').replace(/\.\d+/,'').replace(/Z$/,'').replace(/[+-]\d{2}:?\d{0,2}$/,'');
+              const sessionDate = raw.split(' ')[0]; // "YYYY-MM-DD"
+              if (dateFrom && sessionDate < dateFrom) return false;
+              if (dateTo   && sessionDate > dateTo)   return false;
+            }
+            return true;
+          });
+
+          return (
+            <>
+              {/* Summary bar */}
+              {(dateFrom||dateTo||searchTerm) && (
+                <div style={{marginBottom:12,fontSize:'0.62rem',color:'var(--muted)',
+                  display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontWeight:700,color:'var(--text)'}}>{filtered.length}</span> session ditemukan
+                  {(dateFrom||dateTo) && (
+                    <span style={{color:'var(--muted2)'}}>
+                      · {dateFrom||'...'} → {dateTo||'sekarang'}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
+                {filtered.map((s,i)=>(
+                  <div key={i} className="hist-card" onClick={()=>loadHistDetail(s)}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:800,fontSize:'0.75rem',letterSpacing:'-0.01em',marginBottom:2}}>{s.session_code}</div>
+                        <div style={{fontSize:'0.6rem',color:'var(--muted)',marginBottom:6}}>{s.transporter_id}</div>
+                        <div style={{fontSize:'0.6rem',color:'var(--muted)'}}>
+                          <span style={{marginRight:10}}>👤 {s.security_name||'-'}</span>
+                          <span>🚚 {s.courier_name||'-'}</span>
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontSize:'1.3rem',fontWeight:900,letterSpacing:'-0.03em',lineHeight:1}}>{s.total_sorted}</div>
+                        <div style={{fontSize:'0.55rem',color:'var(--muted)',marginBottom:4}}>paket</div>
+                        <span className="tag tag-green">DONE</span>
+                      </div>
+                    </div>
+                    <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid var(--border2)',
+                      fontSize:'0.58rem',color:'var(--muted2)',fontFamily:"'DM Mono',monospace"}}>
+                      {formatWIB(s.closed_at)}
                     </div>
                   </div>
-                  <div style={{textAlign:'right',flexShrink:0}}>
-                    <div style={{fontSize:'1.3rem',fontWeight:900,letterSpacing:'-0.03em',lineHeight:1}}>{s.total_sorted}</div>
-                    <div style={{fontSize:'0.55rem',color:'var(--muted)',marginBottom:4}}>paket</div>
-                    <span className="tag tag-green">DONE</span>
+                ))}
+                {filtered.length===0 && (
+                  <div style={{gridColumn:'1/-1',textAlign:'center',padding:48,color:'var(--muted2)',fontSize:'0.68rem'}}>
+                    {historyData.length===0 ? 'Belum ada history handover' : 'Tidak ada data untuk filter ini'}
                   </div>
-                </div>
-                <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid var(--border2)',
-                  fontSize:'0.58rem',color:'var(--muted2)',fontFamily:"'DM Mono',monospace"}}>
-                  {formatWIB(s.closed_at)}
-                </div>
+                )}
               </div>
-            ))}
-            {historyData.length===0 && !loading && (
-              <div style={{gridColumn:'1/-1',textAlign:'center',padding:48,color:'var(--muted2)',fontSize:'0.68rem'}}>
-                Belum ada history handover
-              </div>
-            )}
-          </div>
-        )}
+            </>
+          );
+        })()}
       </PageWrapper>
     );
   }
