@@ -3,9 +3,9 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import {
   RefreshCw, FileSpreadsheet, Trash2, Upload, Plus,
-  Database as DbIcon, LayoutGrid, X, Loader2
+  Database as DbIcon, LayoutGrid, X
 } from 'lucide-react';
-import { API_BASE, formatWIB, getDesc, SearchBar, TableBox, useDebounce } from './shared';
+import { API_BASE, formatWIB, getDesc, SearchBar, TableBox, TableSkeleton, PageWrapper, useDebounce } from './shared';
 
 export default function InventoryPage({ activeMenu, showToast }) {
   const [data, setData]         = useState([]);
@@ -121,7 +121,7 @@ export default function InventoryPage({ activeMenu, showToast }) {
   /* ── MASTER LOKASI ── */
   if (activeMenu === 'Master Lokasi') {
     return (
-      <>
+      <PageWrapper>
         <TopbarActions/>
         <div style={{display:'flex',gap:8,marginBottom:14,background:'var(--surface)',borderRadius:8,
           padding:4,border:'1px solid var(--border)',width:'fit-content',marginTop:12}}>
@@ -196,22 +196,18 @@ export default function InventoryPage({ activeMenu, showToast }) {
             </div>
           </div>
         )}
-      </>
+      </PageWrapper>
     );
   }
 
   /* ── GENERIC TABLE ── */
   return (
-    <>
+    <PageWrapper>
       <div style={{display:'flex',justifyContent:'flex-end',gap:6,marginBottom:12}}>
         <TopbarActions/>
       </div>
       <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm}/>
-      {loading ? (
-        <div style={{textAlign:'center',padding:48,color:'var(--muted2)'}}>
-          <Loader2 size={20} className="spin" style={{marginBottom:8}}/>
-        </div>
-      ) : (
+      {loading ? <TableSkeleton rows={10} cols={4}/> : (
         <TableBox>
           <table className="data-table">
             <thead><tr>
@@ -252,6 +248,6 @@ export default function InventoryPage({ activeMenu, showToast }) {
           </table>
         </TableBox>
       )}
-    </>
+    </PageWrapper>
   );
 }

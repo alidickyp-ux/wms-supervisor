@@ -81,6 +81,56 @@ export function TableBox({ children }) {
   );
 }
 
+/* ── TABLE SKELETON ── */
+export function TableSkeleton({ rows = 8, cols = 5 }) {
+  return (
+    <div className="page-enter" style={{border:'1px solid var(--border)',borderRadius:10,overflow:'hidden',background:'var(--surface)'}}>
+      {/* fake header */}
+      <div style={{display:'flex',gap:12,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:'var(--surface)'}}>
+        {[...Array(cols)].map((_,i) => (
+          <div key={i} className="skel" style={{height:10,borderRadius:4,flex:i===1?2:1}}/>
+        ))}
+      </div>
+      {[...Array(rows)].map((_,i) => (
+        <div key={i} style={{display:'flex',gap:12,padding:'11px 12px',
+          borderBottom:'1px solid var(--border2)',background:i%2===0?'var(--surface)':'#fafaf8'}}>
+          {[...Array(cols)].map((_,j) => (
+            <div key={j} className="skel" style={{
+              height:9,borderRadius:4,flex:j===1?2:1,
+              animationDelay:`${(i*cols+j)*30}ms`
+            }}/>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── CARD SKELETON (untuk History grid) ── */
+export function CardSkeleton({ count = 6 }) {
+  return (
+    <div className="page-enter" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
+      {[...Array(count)].map((_,i) => (
+        <div key={i} style={{border:'1px solid var(--border)',borderRadius:10,padding:14,background:'var(--surface)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+            <div style={{flex:1,display:'flex',flexDirection:'column',gap:6}}>
+              <div className="skel" style={{height:12,borderRadius:4,width:'60%',animationDelay:`${i*60}ms`}}/>
+              <div className="skel" style={{height:9,borderRadius:4,width:'40%',animationDelay:`${i*60+20}ms`}}/>
+            </div>
+            <div className="skel" style={{width:40,height:40,borderRadius:8,animationDelay:`${i*60+40}ms`}}/>
+          </div>
+          <div className="skel" style={{height:9,borderRadius:4,width:'80%',animationDelay:`${i*60+60}ms`}}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── PAGE WRAPPER (fade-in saat konten muncul) ── */
+export function PageWrapper({ children }) {
+  return <div className="page-enter">{children}</div>;
+}
+
 /* ── PROGRESS BAR ── */
 export function ProgBar({ value, max }) {
   const pct = max > 0 ? Math.min(100, Math.round(value / max * 100)) : 0;
@@ -177,4 +227,17 @@ export const GLOBAL_CSS = `
   .prog-fill{height:100%;border-radius:2px;transition:width 0.3s}
   .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;
     font-size:0.58rem;font-weight:700}
+  /* ── PAGE TRANSITION ── */
+  .page-enter{animation:pageIn 0.18s ease-out both}
+  @keyframes pageIn{
+    from{opacity:0;transform:translateY(5px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+  /* ── SKELETON ── */
+  .skel{background:linear-gradient(90deg,#ebebeb 25%,#f5f5f5 50%,#ebebeb 75%);
+    background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite}
+  @keyframes shimmer{
+    0%{background-position:200% 0}
+    100%{background-position:-200% 0}
+  }
 `;

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { RefreshCw, FileSpreadsheet, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
-import { API_OUTBOUND, formatWIB, getDesc, SearchBar, TableBox, ProgBar, useDebounce } from './shared';
+import { RefreshCw, FileSpreadsheet, ChevronRight, ArrowLeft } from 'lucide-react';
+import { API_OUTBOUND, formatWIB, getDesc, SearchBar, TableBox, TableSkeleton, PageWrapper, ProgBar, useDebounce } from './shared';
 import { PrintLabelPanel } from './PrintLabel';
 
 export default function OutboundPage({ activeMenu, showToast }) {
@@ -114,7 +114,7 @@ export default function OutboundPage({ activeMenu, showToast }) {
   /* ── PICKLIST GROUPS VIEW ── */
   if (!selectedHeader) {
     return (
-      <>
+      <PageWrapper>
         <div style={{display:'flex',justifyContent:'flex-end',gap:6,marginBottom:12}}>
           <TopbarActions/>
         </div>
@@ -128,9 +128,7 @@ export default function OutboundPage({ activeMenu, showToast }) {
           </div>
         )}
         <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari picklist atau nama toko..."/>
-        {loading ? (
-          <div style={{textAlign:'center',padding:48}}><Loader2 size={20} className="spin"/></div>
-        ) : (
+        {loading ? <TableSkeleton rows={8} cols={5}/> : (
           <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
             {/* Header sticky */}
             <div style={{display:'flex',padding:'7px 14px',background:'var(--bg)',borderBottom:'1px solid var(--border)',
@@ -173,13 +171,13 @@ export default function OutboundPage({ activeMenu, showToast }) {
             )}
           </div>
         )}
-      </>
+      </PageWrapper>
     );
   }
 
   /* ── DETAIL ROW VIEW ── */
   return (
-    <>
+    <PageWrapper>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
         <button className="btn-icon" onClick={()=>setSelectedHeader(null)}><ArrowLeft size={14}/></button>
         <div style={{display:'flex',gap:6}}>
@@ -222,6 +220,6 @@ export default function OutboundPage({ activeMenu, showToast }) {
           </tbody>
         </table>
       </TableBox>
-    </>
+    </PageWrapper>
   );
 }

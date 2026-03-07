@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { RefreshCw, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
-import { API_DISPATCH, formatWIB, statusColor, SearchBar, TableBox, useDebounce } from './shared';
+import { RefreshCw, FileSpreadsheet, FileText } from 'lucide-react';
+import { API_DISPATCH, formatWIB, statusColor, SearchBar, TableBox, TableSkeleton, CardSkeleton, PageWrapper, useDebounce } from './shared';
 
 export default function DispatchPage({ activeMenu, showToast }) {
   const [dispatchData, setDispatchData]           = useState([]);
@@ -126,7 +126,7 @@ export default function DispatchPage({ activeMenu, showToast }) {
   if (activeMenu === 'History') {
     if (selectedHistSession) {
       return (
-        <>
+        <PageWrapper>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
             <button className="btn-icon" onClick={()=>{setSelectedHistSession(null);setHistDetail(null);}}>←</button>
             <div style={{display:'flex',gap:6}}>
@@ -188,56 +188,58 @@ export default function DispatchPage({ activeMenu, showToast }) {
               );
             })}
           </div>
-        </>
+        </PageWrapper>
       );
     }
 
     return (
-      <>
+      <PageWrapper>
         <div style={{display:'flex',justifyContent:'flex-end',marginBottom:12}}>
           <button className="btn-icon" onClick={()=>fetchData('History')}><RefreshCw size={13} className={loading?'spin':''}/></button>
         </div>
         <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari session, kurir, security..."/>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
-          {historyData
-            .filter(s => !searchTerm || JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase()))
-            .map((s,i)=>(
-            <div key={i} className="hist-card" onClick={()=>loadHistDetail(s)}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
-                <div style={{minWidth:0}}>
-                  <div style={{fontWeight:800,fontSize:'0.75rem',letterSpacing:'-0.01em',marginBottom:2}}>{s.session_code}</div>
-                  <div style={{fontSize:'0.6rem',color:'var(--muted)',marginBottom:6}}>{s.transporter_id}</div>
-                  <div style={{fontSize:'0.6rem',color:'var(--muted)'}}>
-                    <span style={{marginRight:10}}>👤 {s.security_name||'-'}</span>
-                    <span>🚚 {s.courier_name||'-'}</span>
+        {loading ? <CardSkeleton count={6}/> : (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
+            {historyData
+              .filter(s => !searchTerm || JSON.stringify(s).toUpperCase().includes(searchTerm.toUpperCase()))
+              .map((s,i)=>(
+              <div key={i} className="hist-card" onClick={()=>loadHistDetail(s)}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:800,fontSize:'0.75rem',letterSpacing:'-0.01em',marginBottom:2}}>{s.session_code}</div>
+                    <div style={{fontSize:'0.6rem',color:'var(--muted)',marginBottom:6}}>{s.transporter_id}</div>
+                    <div style={{fontSize:'0.6rem',color:'var(--muted)'}}>
+                      <span style={{marginRight:10}}>👤 {s.security_name||'-'}</span>
+                      <span>🚚 {s.courier_name||'-'}</span>
+                    </div>
+                  </div>
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    <div style={{fontSize:'1.3rem',fontWeight:900,letterSpacing:'-0.03em',lineHeight:1}}>{s.total_sorted}</div>
+                    <div style={{fontSize:'0.55rem',color:'var(--muted)',marginBottom:4}}>paket</div>
+                    <span className="tag tag-green">DONE</span>
                   </div>
                 </div>
-                <div style={{textAlign:'right',flexShrink:0}}>
-                  <div style={{fontSize:'1.3rem',fontWeight:900,letterSpacing:'-0.03em',lineHeight:1}}>{s.total_sorted}</div>
-                  <div style={{fontSize:'0.55rem',color:'var(--muted)',marginBottom:4}}>paket</div>
-                  <span className="tag tag-green">DONE</span>
+                <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid var(--border2)',
+                  fontSize:'0.58rem',color:'var(--muted2)',fontFamily:"'DM Mono',monospace"}}>
+                  {formatWIB(s.closed_at)}
                 </div>
               </div>
-              <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid var(--border2)',
-                fontSize:'0.58rem',color:'var(--muted2)',fontFamily:"'DM Mono',monospace"}}>
-                {formatWIB(s.closed_at)}
+            ))}
+            {historyData.length===0 && !loading && (
+              <div style={{gridColumn:'1/-1',textAlign:'center',padding:48,color:'var(--muted2)',fontSize:'0.68rem'}}>
+                Belum ada history handover
               </div>
-            </div>
-          ))}
-          {historyData.length===0 && (
-            <div style={{gridColumn:'1/-1',textAlign:'center',padding:48,color:'var(--muted2)',fontSize:'0.68rem'}}>
-              Belum ada history handover
-            </div>
-          )}
-        </div>
-      </>
+            )}
+          </div>
+        )}
+      </PageWrapper>
     );
   }
 
   /* ── DISPATCH LOG & HANDOVER ── */
   const isHO = activeMenu === 'Handover';
   return (
-    <>
+    <PageWrapper>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
         <div/>
         <div style={{display:'flex',gap:6}}>
@@ -250,12 +252,7 @@ export default function DispatchPage({ activeMenu, showToast }) {
         </div>
       </div>
       <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm}/>
-      {loading ? (
-        <div style={{textAlign:'center',padding:48,color:'var(--muted2)'}}>
-          <Loader2 size={20} className="spin" style={{marginBottom:8}}/>
-          <div style={{fontSize:'0.65rem'}}>Memuat data...</div>
-        </div>
-      ) : (
+      {loading ? <TableSkeleton rows={10} cols={isHO ? 8 : 7}/> : (
         <TableBox>
           <table className="data-table">
             <thead><tr>
@@ -293,6 +290,6 @@ export default function DispatchPage({ activeMenu, showToast }) {
           </table>
         </TableBox>
       )}
-    </>
+    </PageWrapper>
   );
 }
