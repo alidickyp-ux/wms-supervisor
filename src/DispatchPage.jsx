@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { RefreshCw, FileSpreadsheet, FileText } from 'lucide-react';
@@ -11,8 +11,12 @@ export default function DispatchPage({ activeMenu, showToast }) {
   const [histDetail, setHistDetail]               = useState(null);
   const [histSignature, setHistSignature]         = useState({ sig_security: null, sig_kurir: null });
   const [loading, setLoading]                     = useState(false);
+  const [detailLoading, setDetailLoading]         = useState(false);
   const [searchInput, setSearchInput]             = useState('');
   const searchTerm = useDebounce(searchInput);
+
+  // Cache per session_code — klik kedua langsung dari memori
+  const detailCache = useRef({});
 
   useEffect(() => {
     setSearchInput('');
@@ -39,16 +43,38 @@ export default function DispatchPage({ activeMenu, showToast }) {
   };
 
   const loadHistDetail = async (session) => {
+    const key = session.session_code;
+
+    // Tampilkan session header SEGERA (optimistic)
     setSelectedHistSession(session);
+
+    // Kalau sudah di-cache, tampilkan instan
+    if (detailCache.current[key]) {
+      const cached = detailCache.current[key];
+      setHistDetail(cached.detail);
+      setHistSignature(cached.signature);
+      return;
+    }
+
+    // Belum di-cache — fetch sambil tampilkan skeleton
+    setHistDetail(null);
     setHistSignature({ sig_security: null, sig_kurir: null });
+    setDetailLoading(true);
     try {
       const [logRes, sigRes] = await Promise.all([
-        axios.get(`${API_DISPATCH}?action=get_data&target=session_log&session_code=${session.session_code}`),
-        axios.get(`${API_DISPATCH}?action=get_data&target=session_signature&session_code=${session.session_code}`)
+        axios.get(`${API_DISPATCH}?action=get_data&target=session_log&session_code=${key}`),
+        axios.get(`${API_DISPATCH}?action=get_data&target=session_signature&session_code=${key}`)
       ]);
-      setHistDetail(logRes.data?.data || []);
-      if (sigRes.data?.status === 'success') setHistSignature(sigRes.data.data);
+      const detail    = logRes.data?.data || [];
+      const signature = sigRes.data?.status === 'success' ? sigRes.data.data : { sig_security: null, sig_kurir: null };
+
+      // Simpan ke cache
+      detailCache.current[key] = { detail, signature };
+
+      setHistDetail(detail);
+      setHistSignature(signature);
     } catch { showToast("Gagal load detail", "error"); }
+    finally { setDetailLoading(false); }
   };
 
   const handleExport = (rows, filename) => {
@@ -151,20 +177,24 @@ export default function DispatchPage({ activeMenu, showToast }) {
               </div>
             ))}
           </div>
-          <TableBox>
-            <table className="data-table">
-              <thead><tr><th>No.</th><th>No. AWB</th><th>Status</th></tr></thead>
-              <tbody>
-                {(histDetail||[]).map((r,i)=>(
-                  <tr key={i}>
-                    <td className="mono">{i+1}</td>
-                    <td style={{fontFamily:"'DM Mono',monospace",fontSize:'0.62rem'}}>{r.tracking_reference||r.do_reference||'-'}</td>
-                    <td><span className={`tag ${r.handover_status==='CONFIRMED'?'tag-green':r.handover_status==='NOT_FOUND'?'tag-amber':'tag-red'}`}>{r.handover_status||'-'}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableBox>
+          {detailLoading ? (
+            <TableSkeleton rows={8} cols={3}/>
+          ) : (
+            <TableBox>
+              <table className="data-table">
+                <thead><tr><th>No.</th><th>No. AWB</th><th>Status</th></tr></thead>
+                <tbody>
+                  {(histDetail||[]).map((r,i)=>(
+                    <tr key={i}>
+                      <td className="mono">{i+1}</td>
+                      <td style={{fontFamily:"'DM Mono',monospace",fontSize:'0.62rem'}}>{r.tracking_reference||r.do_reference||'-'}</td>
+                      <td><span className={`tag ${r.handover_status==='CONFIRMED'?'tag-green':r.handover_status==='NOT_FOUND'?'tag-amber':'tag-red'}`}>{r.handover_status||'-'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableBox>
+          )}
           {/* Signatures */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:16}}>
             {['security','kurir'].map(role => {
@@ -175,7 +205,9 @@ export default function DispatchPage({ activeMenu, showToast }) {
                   <div style={{fontSize:'0.6rem',fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>
                     TTD {role==='security'?'Security':'Kurir'}
                   </div>
-                  {sig ? (
+                  {detailLoading ? (
+                    <div className="skel" style={{height:80,borderRadius:6}}/>
+                  ) : sig ? (
                     <img src={sig} alt={`TTD ${role}`} style={{width:'100%',height:80,objectFit:'contain',borderRadius:6,background:'#fafaf8'}}/>
                   ) : (
                     <div style={{height:80,background:'var(--bg)',borderRadius:6,display:'flex',alignItems:'center',
