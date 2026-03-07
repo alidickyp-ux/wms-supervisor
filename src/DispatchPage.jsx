@@ -228,25 +228,27 @@ export default function DispatchPage({ activeMenu, showToast }) {
 
     return (
       <PageWrapper>
-        {/* ── TOOLBAR ── */}
-        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14,alignItems:'center'}}>
-          {/* Date range */}
-          <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface)',
-            border:'1px solid var(--border)',borderRadius:8,padding:'5px 10px'}}>
-            <span style={{fontSize:'0.58rem',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}}>Dari</span>
+        {/* ── FILTER BAR ── */}
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12,alignItems:'center',
+          background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px'}}>
+          <span style={{fontSize:'0.58rem',fontWeight:700,color:'var(--muted)',textTransform:'uppercase',
+            letterSpacing:'0.06em',marginRight:4}}>Filter Tanggal</span>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:'0.62rem',color:'var(--muted)'}}>Dari</span>
             <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
-              style={{border:'none',outline:'none',fontSize:'0.65rem',fontFamily:'inherit',
-                background:'transparent',color:'var(--text)',cursor:'pointer'}}/>
+              style={{border:'1px solid var(--border)',borderRadius:6,padding:'4px 8px',
+                fontSize:'0.65rem',fontFamily:'inherit',background:'var(--bg)',
+                color:'var(--text)',cursor:'pointer',outline:'none'}}/>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface)',
-            border:'1px solid var(--border)',borderRadius:8,padding:'5px 10px'}}>
-            <span style={{fontSize:'0.58rem',color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}}>Sampai</span>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:'0.62rem',color:'var(--muted)'}}>Sampai</span>
             <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
-              style={{border:'none',outline:'none',fontSize:'0.65rem',fontFamily:'inherit',
-                background:'transparent',color:'var(--text)',cursor:'pointer'}}/>
+              style={{border:'1px solid var(--border)',borderRadius:6,padding:'4px 8px',
+                fontSize:'0.65rem',fontFamily:'inherit',background:'var(--bg)',
+                color:'var(--text)',cursor:'pointer',outline:'none'}}/>
           </div>
           {(dateFrom||dateTo) && (
-            <button className="btn danger" style={{padding:'5px 10px'}}
+            <button className="btn danger" style={{padding:'4px 10px',fontSize:'0.62rem'}}
               onClick={()=>{setDateFrom('');setDateTo('');}}>
               ✕ Reset
             </button>
