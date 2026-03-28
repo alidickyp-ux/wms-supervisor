@@ -91,6 +91,43 @@ export default function InventoryPage({ activeMenu, showToast }) {
   };
   const filteredData = applyFilter(data);
 
+
+  // Fungsi Hapus Lokasi
+const handleDeleteLocation = async (uid) => {
+  if (!window.confirm(`Hapus lokasi ${uid}?`)) return;
+  try {
+    await axios.post(`${API_BASE}?action=delete_location`, { unique_id: uid });
+    showToast("Lokasi berhasil dihapus");
+    fetchData();
+  } catch {
+    showToast("Gagal menghapus lokasi", "error");
+  }
+};
+
+// Fungsi Upload Excel khusus Master Lokasi
+const handleUploadMaster = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (evt) => {
+    setLoading(true);
+    try {
+      const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      // Pastikan backend kamu punya action 'upload_master'
+      await axios.post(`${API_BASE}?action=upload_master`, { data: rows });
+      showToast("Master data berhasil diupdate!");
+      fetchData();
+    } catch {
+      showToast("Gagal upload master", "error");
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+
   /* ── TOPBAR ACTIONS ── */
   function TopbarActions() {
     return (
