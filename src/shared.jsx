@@ -223,6 +223,8 @@ export const GLOBAL_CSS = `
     font-family:inherit;font-size:0.7rem;background:var(--surface);color:var(--text);
     outline:none;margin-bottom:10px;transition:border 0.15s}
   .field:focus{border-color:#bbb}
+  .label-sm{font-size:0.58rem;font-weight:700;color:#aaa;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:5px;display:block}
+  .muted-text{color:var(--muted);font-size:0.62rem}
   .prog-track{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
   .prog-fill{height:100%;border-radius:2px;transition:width 0.3s}
   .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;
