@@ -20,55 +20,83 @@ const CC_TABS = [
 function MetricCard({ icon, label, value, sub, color = '#111', accent }) {
   return (
     <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 12, padding: '14px 16px',
-      display: 'flex', flexDirection: 'column', gap: 6,
+      background: 'var(--surface)', 
+      border: '1px solid var(--border)',
+      borderRadius: 12, 
+      padding: '16px 14px',
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', // Semua konten card rata tengah
+      textAlign: 'center',
+      gap: 8,
       boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
       borderTop: `3px solid ${accent || color}`,
-      minWidth: 0,
     }}>
+      {/* Label & Icon */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)' }}>
         {icon}
-        <span style={{ fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.08em',
-          textTransform: 'uppercase', color: 'var(--muted)' }}>{label}</span>
+        <span style={{ 
+          fontSize: '0.55rem', 
+          fontWeight: 700, 
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase' 
+        }}>{label}</span>
       </div>
-      <div style={{ fontSize: '1.3rem', fontWeight: 900, color, letterSpacing: '-0.02em', lineHeight: 1 }}>
+      
+      {/* Container Value: Dibuat tinggi tetap biar sejajar */}
+      <div style={{ 
+        height: '2.2rem', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        fontSize: '1.35rem', 
+        fontWeight: 900, 
+        color, 
+        letterSpacing: '-0.02em' 
+      }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: '0.58rem', color: 'var(--muted2)', fontWeight: 500 }}>{sub}</div>}
+      
+      {/* Subtext */}
+      {sub && (
+        <div style={{ 
+          fontSize: '0.58rem', 
+          color: 'var(--muted2)', 
+          fontWeight: 500,
+          marginTop: 2 
+        }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Compute dashboard metrics based on Excel logic ───────────────────────
+// ── Compute dashboard metrics with 2 decimal precision ───────────────────
 function useCycleMetrics(allData) {
   return useMemo(() => {
     const recon = allData.recon || [];
-    
-    // 1. Total Location (Unique locations in recon)
     const locs = [...new Set(recon.map(r => r.location_id))];
     const totalLoc = locs.length;
 
-    // 2. Progress Counts (Based on Location completion status)
-    const need1st = recon.filter(r => r.final_status === 'NEED 1ST COUNT');
-    const need1stLocs = new Set(need1st.map(r => r.location_id)).size;
-
-    const need2nd = recon.filter(r => r.final_status === 'NEED 2ND COUNT');
-    const need2ndLocs = new Set(need2nd.map(r => r.location_id)).size;
-
+    const need1stLocs = new Set(recon.filter(r => r.final_status === 'NEED 1ST COUNT').map(r => r.location_id)).size;
+    const need2ndLocs = new Set(recon.filter(r => r.final_status === 'NEED 2ND COUNT').map(r => r.location_id)).size;
     const completeLocs = totalLoc - need1stLocs - need2ndLocs;
 
-    // 3. Accuracy Formulas (Based on Excel Sheet logic)
     const totalLines = recon.length;
     
-    // Line Accuracy: Lines where Final Qty matches Qty Snap
+    // Helper function untuk pembulatan 2 desimal
+    const calcPct = (num, den) => (den > 0 ? parseFloat(((num / den) * 100).toFixed(2)) : 0);
+
+    // 1. Line Accuracy (2 angka belakang koma)
     const matchLines = recon.filter(r => {
       const finalQty = Number(r.qty_2nd) > 0 ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
       return finalQty === Number(r.qty_snap ?? 0);
     }).length;
-    const lineAcc = totalLines > 0 ? Math.round((matchLines / totalLines) * 100) : 0;
+    const lineAcc = calcPct(matchLines, totalLines);
 
-    // Location Accuracy: Locations where ALL lines match
+    // 2. Location Accuracy (2 angka belakang koma)
     const locAccuracyData = {};
     recon.forEach(r => {
       if (!locAccuracyData[r.location_id]) locAccuracyData[r.location_id] = true;
@@ -76,24 +104,24 @@ function useCycleMetrics(allData) {
       if (finalQty !== Number(r.qty_snap ?? 0)) locAccuracyData[r.location_id] = false;
     });
     const matchLocCount = Object.values(locAccuracyData).filter(v => v === true).length;
-    const locAcc = totalLoc > 0 ? Math.round((matchLocCount / totalLoc) * 100) : 0;
+    const locAcc = calcPct(matchLocCount, totalLoc);
 
-    // Qty Accuracy: Total Final Qty / Total Qty Snap
-    const totalQtySnap = recon.reduce((a, r) => a + Number(r.qty_snap ?? 0), 0);
-    const totalQtyFinal = recon.reduce((a, r) => {
-      const finalQty = Number(r.qty_2nd) > 0 ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
-      return a + finalQty;
-    }, 0);
-    const qtyAcc = totalQtySnap > 0 ? Math.round((totalQtyFinal / totalQtySnap) * 100) : 0;
-
-    // SKU Accuracy (Unique Skus that match)
+    // 3. SKU Accuracy (2 angka belakang koma)
     const allSkus = [...new Set(recon.map(r => r.artikel).filter(Boolean))];
     const matchSkus = recon.filter(r => {
       const fq = Number(r.qty_2nd) > 0 ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
       return fq === Number(r.qty_snap ?? 0);
     });
     const matchSkuSet = new Set(matchSkus.map(r => r.artikel));
-    const skuAcc = allSkus.length > 0 ? Math.round((matchSkuSet.size / allSkus.length) * 100) : 0;
+    const skuAcc = calcPct(matchSkuSet.size, allSkus.length);
+
+    // 4. Qty Accuracy (Sesuai diskusi sebelumnya)
+    const totalQtySnap = recon.reduce((a, r) => a + Number(r.qty_snap ?? 0), 0);
+    const totalQtyFinal = recon.reduce((a, r) => {
+      const finalQty = Number(r.qty_2nd) > 0 ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+      return a + finalQty;
+    }, 0);
+    const qtyAcc = calcPct(totalQtyFinal, totalQtySnap);
 
     return { 
       totalLoc, need1stLocs, need2ndLocs, completeLocs, 
@@ -104,13 +132,47 @@ function useCycleMetrics(allData) {
 }
 
 function AccPill({ pct }) {
-  const color = pct >= 99 ? '#2d6a4f' : pct >= 95 ? '#92400e' : '#9b1c1c';
-  const bg    = pct >= 99 ? '#ecfdf5' : pct >= 95 ? '#fffbeb' : '#fff1f2';
+  let color = '#10b981'; // Hijau
+  let label = '';
+
+  if (pct === 100) {
+    color = '#10b981'; 
+  } else if (pct < 100) {
+    color = '#ef4444'; // Merah
+  } else {
+    color = '#8b5cf6'; // Ungu (Excess)
+    label = 'EXCESS';
+  }
+
   return (
-    <span style={{ display:'inline-block', padding:'1px 7px', borderRadius:99,
-      background: bg, color, fontSize:'0.6rem', fontWeight:800 }}>
-      {pct}%
-    </span>
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', 
+      justifyContent: 'center',
+      width: '100%',
+      lineHeight: 1
+    }}>
+      <span style={{ 
+        color, 
+        fontSize: '1.25rem', // Sedikit dikecilkan agar angka desimal tidak sesak
+        fontWeight: 900, 
+        letterSpacing: '-0.03em' 
+      }}>
+        {pct}%
+      </span>
+      {label && (
+        <span style={{ 
+          fontSize: '0.55rem', 
+          fontWeight: 800, 
+          color, 
+          marginTop: 2,
+          letterSpacing: '0.05em'
+        }}>
+          {label}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -287,7 +349,7 @@ export default function InventoryPage({ activeMenu, showToast }) {
       { icon:<GitCompare size={13}/>, label:'Line Accuracy', accent:'#84cc16',
         value: <AccPill pct={lineAcc}/>, sub: `${matchLines} / ${totalLines} lines` },
       { icon:<Package size={13}/>, label:'SKU Accuracy', accent:'#8b5cf6',
-        value: <AccPill pct={skuAcc}/>, sub: '' },
+        value: <AccPill pct={skuAcc}/>, sub: 'Based on unique SKUs' },
       { icon:<TrendingUp size={13}/>, label:'Qty Accuracy', accent:'#ec4899',
         value: <AccPill pct={qtyAcc}/>, sub: 'Total final vs snap' },
     ];

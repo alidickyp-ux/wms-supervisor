@@ -1,41 +1,79 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { RefreshCw, FileSpreadsheet, ChevronRight, ArrowLeft } from 'lucide-react';
-import { API_OUTBOUND, formatWIB, getDesc, SearchBar, TableBox, TableSkeleton, PageWrapper, ProgBar, useDebounce } from './shared';
+import { 
+  RefreshCw, FileSpreadsheet, ChevronRight, ArrowLeft, 
+  Package, CheckCircle2, Activity, CheckSquare
+} from 'lucide-react';
+import { 
+  API_OUTBOUND, formatWIB, getDesc, SearchBar, TableBox, 
+  TableSkeleton, PageWrapper, ProgBar, useSearch 
+} from './shared';
 import { PrintLabelPanel } from './PrintLabel';
+import DispatchPanel from './DispatchPage';
+
+// ── Online Dispatch wrapper ───────────────────────────────────────────
+function OnlineDispatch({ showToast }) {
+  return <DispatchPanel showToast={showToast}/>;
+}
+
+// ── Dashboard metric card ─────────────────────────────────────────────
+function MiniMetric({ icon, label, value, sub, accent }) {
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 12, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 6,
+      borderTop: `3px solid ${accent}`, flex: 1, minWidth: '160px',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--muted)' }}>
+        {icon}
+        <span style={{ fontSize: '0.55rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+      </div>
+      <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text)', lineHeight: 1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize: '0.58rem', color: 'var(--muted2)', fontWeight: 500 }}>{sub}</div>}
+    </div>
+  );
+}
 
 export default function OutboundPage({ activeMenu, showToast }) {
-  const [data, setData]           = useState([]);
-  const [loading, setLoading]     = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const searchTerm = useDebounce(searchInput);
+  const [activeB2bTab, setActiveB2bTab] = useState('Explorer');
+  const [explorerTab, setExplorerTab]   = useState('active');
+  const [data, setData]                 = useState([]);
+  const [loading, setLoading]           = useState(false);
+  const { value: searchInput, setValue: setSearchInput, term: searchTerm,
+          triggerNow: triggerSearch, reset: resetSearch } = useSearch();
+  
   const [selectedHeader, setSelectedHeader] = useState(null);
-  const [explorerTab, setExplorerTab]       = useState('active');
   const [selectedPcb, setSelectedPcb]       = useState('');
   const [selectedBoxHuid, setSelectedBoxHuid] = useState('');
   const [boxOptions, setBoxOptions]         = useState([]);
 
+  // ── Online Dispatch ──────────────────────────────────────────────
+  if (activeMenu === 'Online Dispatch') {
+    return <OnlineDispatch showToast={showToast}/>;
+  }
+
+  const currentSubMenu = activeB2bTab;
+
   useEffect(() => {
-    setSearchInput('');
+    resetSearch();
     setSelectedHeader(null);
     fetchData();
-  }, [activeMenu]);
+  }, [activeMenu, activeB2bTab]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      if (activeMenu === 'Print Label') {
-        const res = await axios.get(`${API_OUTBOUND}?target=packing_transactions`);
-        setData(res.data?.data || []);
-      } else {
-        const tm = {
-          'Picking':  'picking_transactions',
-          'Packing':  'packing_transactions',
-          'Explorer': 'outbound_explorer',
-          'Pick Compliance': 'picking_compliance',
-        };
-        const res = await axios.get(`${API_OUTBOUND}?action=get_data&target=${tm[activeMenu]}`);
+      const targets = {
+        'Picking':     'picking_transactions',
+        'Packing':     'packing_transactions',
+        'Explorer':    'outbound_explorer',
+        'Print Label': 'packing_transactions',
+      };
+      const target = targets[currentSubMenu];
+      if (target) {
+        const res = await axios.get(`${API_OUTBOUND}?action=get_data&target=${target}`);
         setData(res.data?.data || []);
       }
     } catch { setData([]); }
@@ -47,179 +85,313 @@ export default function OutboundPage({ activeMenu, showToast }) {
     try {
       const res = await axios.get(`${API_OUTBOUND}?action=get_print_data&pcb=${pcb}`);
       setBoxOptions(res.data?.data || []);
-    } catch { showToast("Gagal tarik box", "error"); }
+    } catch { showToast("Gagal menarik data box", "error"); }
   };
 
-  const handleExport = (rows, filename) => {
-    if (!rows?.length) return showToast("Tidak ada data", "error");
-    const out = rows.map(r => {
-      const n = { ...r };
-      ['scanned_at','tanggal_packing'].forEach(k => { if (n[k]) n[k] = formatWIB(n[k]); });
-      return n;
-    });
-    const ws = XLSX.utils.json_to_sheet(out);
+  const exportToExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Data");
-    XLSX.writeFile(wb, filename || `${activeMenu}.xlsx`);
+    XLSX.writeFile(wb, `COOL_Outbound_${currentSubMenu}.xlsx`);
   };
 
-  const showPack = activeMenu === 'Packing' || activeMenu === 'Explorer';
-
-  const picklistGroups = useMemo(() => {
-    if (!['Picking','Packing','Explorer'].includes(activeMenu) || !data) return [];
+  // ── Data processing ──────────────────────────────────────────────
+  const explorerData = useMemo(() => {
+    if (currentSubMenu !== 'Explorer' || !data) return [];
     const map = {};
     data.forEach(r => {
       const k = r.picklist_number; if (!k) return;
-      if (!map[k]) map[k] = { id:k, name:r.nama_customer||r.nama_toko||r.customer||'-', qtyReq:0, qtyPick:0, qtyPack:0, allPacked:true };
-      map[k].qtyReq  += Number(r.qty_req||r.qty_order||0);
-      map[k].qtyPick += Number(r.qty_picked||r.qty_actual||0);
-      map[k].qtyPack += Number(r.qty_packed||0);
-      if (r.status !== 'packed') map[k].allPacked = false;
+      if (!map[k]) {
+        map[k] = {
+          id: k,
+          name: r.nama_customer || r.nama_toko || r.customer || '-',
+          lines: 0, pickLinesDone: 0, packLinesDone: 0,
+          totalQty: 0, qtyPicked: 0, qtyPacked: 0, isDone: false
+        };
+      }
+      map[k].lines    += 1;
+      map[k].totalQty += Number(r.qty_req    || 0);
+      map[k].qtyPicked += Number(r.qty_picked || 0);
+      map[k].qtyPacked += Number(r.qty_packed || 0);
+      if (Number(r.qty_picked || 0) >= Number(r.qty_req)) map[k].pickLinesDone += 1;
+      if (Number(r.qty_packed || 0) >= Number(r.qty_req)) map[k].packLinesDone += 1;
+      if (r.status === 'packed' || r.status === 'completed') map[k].isDone = true;
     });
     return Object.values(map);
-  }, [data, activeMenu]);
+  }, [data, currentSubMenu]);
 
-  const applyFilter = (arr) => {
-    if (!searchTerm) return arr;
+  const metrics = useMemo(() => {
+    const activeList = explorerData.filter(h => !h.isDone);
+    return {
+      totalActive:    activeList.length,
+      totalQtyActive: activeList.reduce((a,b) => a + b.totalQty, 0),
+      totalQtyDone:   explorerData.reduce((a,b) => a + b.qtyPacked, 0),
+      totalDone:      explorerData.filter(h => h.isDone).length,
+    };
+  }, [explorerData]);
+
+  const filteredExplorer = useMemo(() => {
+    const base = explorerData.filter(h => explorerTab === 'active' ? !h.isDone : h.isDone);
+    if (!searchTerm) return base;
     const s = searchTerm.toUpperCase();
-    return arr.filter(r => Object.values(r).some(v => String(v).toUpperCase().includes(s)));
-  };
+    return base.filter(h => h.id.includes(s) || h.name.toUpperCase().includes(s));
+  }, [explorerData, explorerTab, searchTerm]);
 
-  const filteredGroups = applyFilter(
-    picklistGroups.filter(h => activeMenu !== 'Explorer' || (explorerTab === 'active' ? !h.allPacked : h.allPacked))
-  );
-  const filteredData = selectedHeader
-    ? data.filter(r => r.picklist_number === selectedHeader)
-    : applyFilter(data);
+  // filteredData: untuk Picking, Packing; dan untuk Explorer detail
+  const filteredData = useMemo(() => {
+    const base = selectedHeader
+      ? data.filter(r => r.picklist_number === selectedHeader)
+      : data;
+    if (!searchTerm) return base;
+    const s = searchTerm.toUpperCase();
+    return base.filter(r => Object.values(r).some(v => String(v).toUpperCase().includes(s)));
+  }, [data, selectedHeader, searchTerm]);
 
-  /* ── TOPBAR ACTIONS (dikembalikan ke parent via prop jika perlu, tapi di sini self-contained) ── */
-  function TopbarActions() {
-    return (
-      <>
-        <button className="btn success" onClick={()=>handleExport(selectedHeader?filteredData:picklistGroups,`${activeMenu}.xlsx`)}>
-          <FileSpreadsheet size={12}/>Export
-        </button>
-        <button className="btn-icon" onClick={fetchData}><RefreshCw size={13} className={loading?'spin':''}/></button>
-      </>
-    );
-  }
+  // Info picklist yang dipilih (untuk header detail Explorer)
+  const selectedPicklistInfo = useMemo(() =>
+    explorerData.find(x => x.id === selectedHeader),
+  [explorerData, selectedHeader]);
 
-  /* ── PRINT LABEL ── */
-  if (activeMenu === 'Print Label') {
-    return <PrintLabelPanel data={data} selectedPcb={selectedPcb} setSelectedPcb={setSelectedPcb}
-      selectedBoxHuid={selectedBoxHuid} setSelectedBoxHuid={setSelectedBoxHuid}
-      boxOptions={boxOptions} fetchBoxByPcb={fetchBoxByPcb} loading={loading}/>;
-  }
-
-  /* ── PICKLIST GROUPS VIEW ── */
-  if (!selectedHeader) {
-    return (
-      <PageWrapper>
-        <div style={{display:'flex',justifyContent:'flex-end',gap:6,marginBottom:12}}>
-          <TopbarActions/>
-        </div>
-        {activeMenu === 'Explorer' && (
-          <div style={{display:'flex',gap:6,marginBottom:12}}>
-            {['active','completed'].map(t=>(
-              <button key={t} className={`tab ${explorerTab===t?'on':'off'}`} onClick={()=>setExplorerTab(t)}>
-                {t==='active'?'Active':'Completed'}
-              </button>
-            ))}
-          </div>
-        )}
-        <SearchBar value={searchInput} onChange={setSearchInput} debounced={searchTerm} placeholder="Cari picklist atau nama toko..."/>
-        {loading ? <TableSkeleton rows={8} cols={5}/> : (
-          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
-            {/* Header sticky */}
-            <div style={{display:'flex',padding:'7px 14px',background:'var(--bg)',borderBottom:'1px solid var(--border)',
-              gap:12,fontSize:'0.57rem',color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',
-              position:'sticky',top:0,zIndex:3}}>
-              <span style={{minWidth:22,flexShrink:0}}>#</span>
-              <span style={{minWidth:145,flexShrink:0}}>Picklist / Toko</span>
-              <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
-                <span style={{minWidth:52,flexShrink:0}}>Qty Req</span>
-                <span style={{minWidth:52,flexShrink:0}}>Pick</span>
-                {showPack && <span style={{minWidth:52,flexShrink:0}}>Pack</span>}
-                {showPack && <span style={{flex:1}}>Progress</span>}
-              </div>
-              {activeMenu==='Explorer' && <span style={{minWidth:62,textAlign:'right',flexShrink:0}}>Status</span>}
-            </div>
-            {filteredGroups.map((h,i)=>(
-              <div key={h.id} className="plist-row" onClick={()=>setSelectedHeader(h.id)}>
-                <span style={{fontSize:'0.58rem',color:'var(--muted2)',minWidth:22,flexShrink:0,textAlign:'right'}}>{i+1}</span>
-                <div style={{minWidth:145,maxWidth:145,flexShrink:0}}>
-                  <div style={{fontSize:'0.68rem',fontWeight:800,letterSpacing:'-0.01em',fontFamily:"'DM Mono',monospace",color:'var(--text)'}}>{h.id}</div>
-                  <div style={{fontSize:'0.58rem',color:'var(--muted)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h.name}</div>
-                </div>
-                <div style={{display:'flex',gap:20,flex:1,alignItems:'center'}}>
-                  {[h.qtyReq,h.qtyPick,...(showPack?[h.qtyPack]:[])].map((v,j)=>(
-                    <span key={j} style={{minWidth:52,flexShrink:0,fontSize:'0.7rem',fontWeight:700}}>{v||0}</span>
-                  ))}
-                  {showPack && <ProgBar value={h.qtyPack} max={h.qtyPick||h.qtyReq||1}/>}
-                </div>
-                {activeMenu==='Explorer' && (
-                  <span className={`tag ${h.allPacked?'tag-green':'tag-amber'}`}
-                    style={{minWidth:62,textAlign:'center',flexShrink:0}}>
-                    {h.allPacked?'DONE':'OPEN'}
-                  </span>
-                )}
-                <ChevronRight size={13} style={{color:'var(--muted2)',flexShrink:0}}/>
-              </div>
-            ))}
-            {filteredGroups.length===0 && (
-              <div style={{textAlign:'center',padding:36,color:'var(--muted2)',fontSize:'0.65rem'}}>Tidak ada data</div>
-            )}
-          </div>
-        )}
-      </PageWrapper>
-    );
-  }
-
-  /* ── DETAIL ROW VIEW ── */
   return (
     <PageWrapper>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-        <button className="btn-icon" onClick={()=>setSelectedHeader(null)}><ArrowLeft size={14}/></button>
+      {/* ── TOP ACTION BAR ── */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+        marginBottom:16,gap:12,flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          {/* Tab Picking/Packing/Explorer/Print Label */}
+          {!selectedHeader && (
+            <div style={{display:'flex',gap:4,background:'var(--surface)',borderRadius:8,
+              padding:4,border:'1px solid var(--border)'}}>
+              {['Picking','Packing','Explorer','Print Label'].map(t=>(
+                <button key={t} onClick={()=>setActiveB2bTab(t)}
+                  style={{padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',
+                    fontSize:'0.65rem',fontWeight:700,fontFamily:'inherit',
+                    background:activeB2bTab===t?'var(--text)':'transparent',
+                    color:activeB2bTab===t?'#fff':'var(--muted)'}}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Tombol back saat di detail Explorer */}
+          {selectedHeader && (
+            <button className="btn-icon" onClick={()=>setSelectedHeader(null)}>
+              <ArrowLeft size={14}/>
+            </button>
+          )}
+
+          {/* Tab Active/Complete (hanya di Explorer list) */}
+          {currentSubMenu==='Explorer' && !selectedHeader && (
+            <div style={{display:'flex',background:'var(--surface)',padding:3,
+              borderRadius:6,border:'1px solid var(--border)'}}>
+              {['active','complete'].map(t=>(
+                <button key={t} onClick={()=>setExplorerTab(t)}
+                  style={{border:'none',padding:'4px 10px',borderRadius:4,fontSize:'0.6rem',
+                    fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+                    background:explorerTab===t?'var(--text)':'transparent',
+                    color:explorerTab===t?'#fff':'var(--muted)'}}>
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div style={{display:'flex',gap:6}}>
-          <button className="btn success" onClick={()=>handleExport(filteredData,`${activeMenu}_${selectedHeader}.xlsx`)}>
+          <button className="btn success" onClick={fetchData}>
+            <RefreshCw size={12} className={loading?'spin':''}/>Refresh
+          </button>
+          <button className="btn" onClick={exportToExcel}
+            style={{background:'#fff',border:'1px solid var(--border)'}}>
             <FileSpreadsheet size={12}/>Export
           </button>
         </div>
       </div>
-      <TableBox>
-        <table className="data-table">
-          <thead><tr>
-            {activeMenu==='Picking'
-              ? ['ID','Product','Lokasi','Qty','Picker','Waktu','Status'].map(h=><th key={h}>{h}</th>)
-              : activeMenu==='Explorer'
-              ? ['SKU','Deskripsi','Req','Pick','Pack','Status'].map(h=><th key={h}>{h}</th>)
-              : ['ID','Box#','Product','Qty','Packer','Waktu','HUID','Status'].map(h=><th key={h}>{h}</th>)
-            }
-          </tr></thead>
-          <tbody>
-            {filteredData.map((r,i)=>(
-              <tr key={i}>
-                {activeMenu==='Picking' ? <>
-                  <td className="mono">{r?.id}</td><td>{r?.product_id}</td>
-                  <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{r?.location_id}</td>
-                  <td style={{fontWeight:700}}>{r?.qty_actual}</td><td>{r?.picker_name}</td>
-                  <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r?.scanned_at)}</td>
-                  <td>{r?.status}</td>
-                </> : activeMenu==='Explorer' ? <>
-                  <td className="mono" style={{fontSize:'0.6rem'}}>{r?.sku}</td>
-                  <td style={{fontSize:'0.6rem',color:'var(--muted)',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis'}}>{getDesc(r)}</td>
-                  <td>{r?.qty_req}</td><td>{r?.qty_picked}</td><td>{r?.qty_packed}</td><td>{r?.status}</td>
-                </> : <>
-                  <td className="mono">{r?.id}</td><td>{r?.box_number}</td><td>{r?.product_id}</td>
-                  <td style={{fontWeight:700}}>{r?.qty_packed}</td><td>{r?.scanned_by}</td>
-                  <td className="mono" style={{fontSize:'0.6rem',color:'var(--muted)'}}>{formatWIB(r?.scanned_at)}</td>
-                  <td className="mono" style={{fontSize:'0.6rem'}}>{r?.huid}</td><td>{r?.status}</td>
-                </>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableBox>
+
+      {/* ── DASHBOARD METRICS (Explorer list only) ── */}
+      {currentSubMenu==='Explorer' && !selectedHeader && (
+        <div style={{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap'}}>
+          <MiniMetric icon={<Activity size={14}/>}      label="Active PL"  value={metrics.totalActive}                    sub="Outstanding" accent="#3b82f6"/>
+          <MiniMetric icon={<Package size={14}/>}       label="Qty Req"    value={metrics.totalQtyActive.toLocaleString()} sub="Pcs"         accent="#f59e0b"/>
+          <MiniMetric icon={<CheckSquare size={14}/>}   label="Qty Pack"   value={metrics.totalQtyDone.toLocaleString()}   sub="Pcs"         accent="#8b5cf6"/>
+          <MiniMetric icon={<CheckCircle2 size={14}/>}  label="Done PL"    value={metrics.totalDone}                      sub="Selesai"     accent="#10b981"/>
+        </div>
+      )}
+
+      {/* ── HEADER DETAIL EXPLORER ── */}
+      {currentSubMenu==='Explorer' && selectedHeader && selectedPicklistInfo && (
+        <div style={{display:'flex',alignItems:'center',gap:20,background:'var(--surface)',
+          border:'1px solid var(--border)',borderRadius:12,padding:'14px 20px',marginBottom:16,
+          flexWrap:'wrap'}}>
+          <div style={{flex:1,minWidth:160}}>
+            <div style={{fontSize:'0.55rem',color:'var(--muted)',fontWeight:800,
+              textTransform:'uppercase',marginBottom:3}}>Picklist / Customer</div>
+            <div style={{fontSize:'0.85rem',fontWeight:900,fontFamily:"'DM Mono',monospace"}}>
+              {selectedHeader}
+              <span style={{fontWeight:500,fontFamily:'inherit',color:'var(--muted)',
+                marginLeft:10,fontSize:'0.7rem'}}>
+                — {selectedPicklistInfo.name}
+              </span>
+            </div>
+          </div>
+          {[
+            { l:'SKU',  v: selectedPicklistInfo.lines },
+            { l:'REQ',  v: selectedPicklistInfo.totalQty },
+            { l:'PICK', v: selectedPicklistInfo.qtyPicked, c:'var(--green)' },
+            { l:'PACK', v: selectedPicklistInfo.qtyPacked, c:'var(--text)'  },
+          ].map(m=>(
+            <div key={m.l} style={{textAlign:'center',borderLeft:'1px solid var(--border)',paddingLeft:20}}>
+              <div style={{fontSize:'0.55rem',color:'var(--muted)',fontWeight:800,marginBottom:3}}>{m.l}</div>
+              <div style={{fontSize:'0.8rem',fontWeight:800,color:m.c||'var(--text)'}}>{m.v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── SEARCH BAR ── */}
+      {currentSubMenu !== 'Print Label' && (
+        <SearchBar value={searchInput} onChange={setSearchInput}
+          onEnter={triggerSearch} debounced={searchTerm} placeholder="Cari data..."/>
+      )}
+
+      {/* ── PRINT LABEL (di luar TableBox) ── */}
+      {currentSubMenu === 'Print Label' && (
+        <PrintLabelPanel
+          data={data} loading={loading}
+          selectedPcb={selectedPcb} setSelectedPcb={setSelectedPcb}
+          selectedBoxHuid={selectedBoxHuid} setSelectedBoxHuid={setSelectedBoxHuid}
+          boxOptions={boxOptions} fetchBoxByPcb={fetchBoxByPcb}/>
+      )}
+
+      {/* ── MAIN TABLE AREA ── */}
+      {currentSubMenu !== 'Print Label' && (
+        loading ? <TableSkeleton rows={10} cols={5}/> : (
+          <TableBox>
+            {/* PICKING */}
+            {currentSubMenu==='Picking' && (
+              <table className="data-table">
+                <thead><tr>
+                  {['ID','Picklist','Product','Loc','Qty','Picker','Time'].map(h=><th key={h}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {filteredData.map((r,i)=>(
+                    <tr key={i}>
+                      <td className="mono">{r.id}</td>
+                      <td className="mono" style={{fontWeight:700}}>{r.picklist_number}</td>
+                      <td>{r.product_id}</td>
+                      <td>{r.location_id}</td>
+                      <td style={{fontWeight:800}}>{r.qty_actual}</td>
+                      <td>{r.picker_name}</td>
+                      <td className="mono muted-text">{formatWIB(r.scanned_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* PACKING */}
+            {currentSubMenu==='Packing' && (
+              <table className="data-table">
+                <thead><tr>
+                  {['ID','Box#','Picklist','Product','Qty','Packer','Time'].map(h=><th key={h}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {filteredData.map((r,i)=>(
+                    <tr key={i}>
+                      <td className="mono">{r.id}</td>
+                      <td style={{fontWeight:700}}>#{r.box_number}</td>
+                      <td className="mono">{r.picklist_number}</td>
+                      <td>{r.product_id}</td>
+                      <td style={{fontWeight:800}}>{r.qty_packed}</td>
+                      <td>{r.scanned_by}</td>
+                      <td className="mono muted-text">{formatWIB(r.scanned_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* EXPLORER LIST */}
+            {currentSubMenu==='Explorer' && !selectedHeader && (
+              <div>
+                <div style={{display:'flex',padding:'12px 18px',background:'var(--bg)',
+                  borderBottom:'2px solid var(--border)',fontSize:'0.58rem',fontWeight:800,
+                  color:'var(--muted)',textTransform:'uppercase'}}>
+                  <div style={{width:220}}>Picklist</div>
+                  <div style={{width:80,textAlign:'center'}}>Lines</div>
+                  <div style={{flex:1,paddingLeft:40}}>Picking Progress</div>
+                  <div style={{flex:1,paddingLeft:40}}>Packing Progress</div>
+                  <div style={{width:24}}/>
+                </div>
+                {filteredExplorer.length === 0 && (
+                  <div style={{textAlign:'center',padding:40,color:'var(--muted2)',fontSize:'0.65rem'}}>
+                    Tidak ada data
+                  </div>
+                )}
+                {filteredExplorer.map(h=>(
+                  <div key={h.id} className="plist-row"
+                    onClick={()=>setSelectedHeader(h.id)}
+                    style={{display:'flex',alignItems:'center',padding:'14px 18px',
+                      borderBottom:'1px solid var(--border2)',cursor:'pointer'}}>
+                    <div style={{width:220}}>
+                      <div style={{fontWeight:800,fontSize:'0.72rem'}}>{h.id}</div>
+                      <div style={{fontSize:'0.6rem',color:'var(--muted)'}}>{h.name}</div>
+                    </div>
+                    <div style={{width:80,textAlign:'center',fontWeight:700}}>{h.lines}</div>
+                    <div style={{flex:1,paddingLeft:40}}>
+                      <div style={{fontSize:'0.5rem',fontWeight:800,color:'var(--muted2)',marginBottom:3}}>
+                        PICK: {h.pickLinesDone}/{h.lines}
+                      </div>
+                      <ProgBar value={h.pickLinesDone} max={h.lines}/>
+                    </div>
+                    <div style={{flex:1,paddingLeft:40}}>
+                      <div style={{fontSize:'0.5rem',fontWeight:800,color:'var(--muted2)',marginBottom:3}}>
+                        PACK: {h.packLinesDone}/{h.lines}
+                      </div>
+                      <ProgBar value={h.packLinesDone} max={h.lines}/>
+                    </div>
+                    <ChevronRight size={14} color="var(--muted2)"/>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* EXPLORER DETAIL — tampil saat selectedHeader ada */}
+            {currentSubMenu==='Explorer' && selectedHeader && (
+              <table className="data-table">
+                <thead><tr>
+                  {['SKU','Deskripsi','Req','Pick','Pack','Status'].map(h=><th key={h}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {filteredData.length === 0 && (
+                    <tr><td colSpan={6} style={{textAlign:'center',padding:32,color:'var(--muted2)'}}>
+                      Tidak ada data
+                    </td></tr>
+                  )}
+                  {filteredData.map((r,i)=>(
+                    <tr key={i}>
+                      <td className="mono" style={{fontWeight:600}}>{r.sku||r.product_id}</td>
+                      <td className="muted-text" style={{maxWidth:200,overflow:'hidden',
+                        textOverflow:'ellipsis'}}>{getDesc(r)}</td>
+                      <td>{r.qty_req}</td>
+                      <td style={{color:Number(r.qty_picked)<Number(r.qty_req)?'var(--orange)':'var(--green)',
+                        fontWeight:700}}>{r.qty_picked}</td>
+                      <td style={{color:Number(r.qty_packed)<Number(r.qty_req)?'var(--orange)':'var(--green)',
+                        fontWeight:700}}>{r.qty_packed}</td>
+                      <td>
+                        <span className={`tag ${r.status==='packed'?'tag-green':'tag-amber'}`}>
+                          {r.status?.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </TableBox>
+        )
+      )}
     </PageWrapper>
   );
 }

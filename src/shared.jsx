@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 
 export const API_BASE     = 'https://wms-neon-bridge.vercel.app/api/inventory';
@@ -6,9 +6,21 @@ export const API_OUTBOUND = 'https://wms-neon-bridge.vercel.app/api/to_web';
 export const API_DISPATCH = 'https://wms-neon-bridge.vercel.app/api/dispatch';
 
 export const NAV = [
-  { key:'inventory', label:'Inventory',  icon:null, children:['Master Lokasi','Snapshoot','1st Count','2nt Count','Reconciliation','Pick Compliance'] },
-  { key:'outbound',  label:'Outbound',   icon:null, children:['Picking','Packing','Explorer','Print Label'] },
-  { key:'dispatch',  label:'Dispatch',   icon:null, children:['Dispatch Log','Handover','History'] },
+  { 
+    key:'inventory', 
+    label:'Inventory', 
+    children:['Cycle Count','Pick Compliance','Master Lokasi'] 
+  },
+  { 
+    key:'outbound',  
+    label:'Outbound',  
+    children:['Outbound B2B'] // Mengikuti struktur baru Anda
+  },
+  { 
+    key:'dispatch',  
+    label:'Dispatch',  
+    children:['Online Dispatch'] 
+  },
 ];
 
 /* ── FORMAT WIB ── */
@@ -36,36 +48,97 @@ export const statusColor = (s) => {
   return 'var(--text)';
 };
 
-/* ── DEBOUNCE HOOK ── */
-export function useDebounce(value) {
+/* ── DEBOUNCE HOOK ──
+   Trigger: berhenti ketik 1 detik ATAU tekan Enter (via setImmediate flag)
+   Tidak ada batas minimum karakter — 1 karakter pun langsung diproses
+── */
+export function useDebounce(value, immediate = false) {
   const [dv, setDv] = useState('');
   useEffect(() => {
-    if (value.length > 0 && value.length < 8) { setDv(''); return; }
     if (value.length === 0) { setDv(''); return; }
-    const t = setTimeout(() => setDv(value), 700);
+    if (immediate) { setDv(value); return; }   // Enter flag dari SearchBar
+    const t = setTimeout(() => setDv(value), 1000);
     return () => clearTimeout(t);
-  }, [value]);
+  }, [value, immediate]);
   return dv;
 }
 
-/* ── SEARCH BAR ── */
-export function SearchBar({ value, onChange, debounced, placeholder='Cari data...' }) {
-  const inputRef = React.useRef(null);
+/* ── SEARCH HOOK — gunakan ini di page sebagai pengganti useState + useDebounce ──
+   const { value, setValue, term, triggerNow } = useSearch()
+   - value     : teks di input
+   - setValue  : update teks (dari onChange)
+   - term      : nilai yang dipakai untuk filter (debounced atau forced)
+   - triggerNow: panggil saat Enter untuk filter langsung
+── */
+export function useSearch(initial = '') {
+  const [value, setValue] = useState(initial);
+  const [term,  setTerm ] = useState(initial);
+  const timerRef = useRef(null);
+
+  const update = useCallback((v) => {
+    setValue(v);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (v === '') { setTerm(''); return; }
+    timerRef.current = setTimeout(() => setTerm(v), 1000);
+  }, []);
+
+  const triggerNow = useCallback((v) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setValue(v);
+    setTerm(v);
+  }, []);
+
+  const reset = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setValue('');
+    setTerm('');
+  }, []);
+
+  return { value, setValue: update, term, triggerNow, clear: reset, reset };
+}
+
+/* ── SEARCH BAR ──
+   - Ketik apa saja → debounce 1 detik
+   - Tekan Enter    → langsung filter
+── */
+export function SearchBar({ value, onChange, onEnter, debounced, placeholder='Cari data...' }) {
+  const inputRef = useRef(null);
+  const isSearching = value.length > 0 && value !== debounced;
   return (
     <div className="search-wrap">
       <Search size={13} className="search-icon"/>
-      <input ref={inputRef} className="search-inp" placeholder={placeholder}
-        value={value} onChange={e => onChange(e.target.value)} autoComplete="off"/>
-      {value.length >= 8 && value !== debounced && (
+      <input
+        ref={inputRef}
+        className="search-inp"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onEnter ? onEnter(value) : onChange(value); // signal immediate
+          }
+          if (e.key === 'Escape') { onChange(''); }
+        }}
+        autoComplete="off"
+      />
+      {isSearching && (
         <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)'}}>
           <Loader2 size={12} className="spin" style={{color:'var(--muted2)'}}/>
         </div>
       )}
-      {value.length > 0 && value.length < 8 && (
-        <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',
-          fontSize:'0.55rem',color:'var(--muted2)',fontWeight:600}}>
-          min {8 - value.length} lagi
-        </div>
+      {value.length > 0 && !isSearching && (
+        <button
+          onClick={() => onChange('')}
+          style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',
+            background:'none',border:'none',cursor:'pointer',color:'var(--muted2)',
+            display:'flex',padding:2,borderRadius:4}}
+          title="Hapus pencarian">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
       )}
     </div>
   );
