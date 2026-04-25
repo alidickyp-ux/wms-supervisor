@@ -414,15 +414,15 @@ export default function InventoryPage({ activeMenu, showToast }) {
           <TableBox>
             <table className="data-table">
               <thead>
-                <tr>
-                  {ccTab === 'snapshot_list'
-                    ? ['Lokasi','Artikel','Qty Snap','Deskripsi'].map(h => <th key={h}>{h}</th>)
-                    : ccTab === 'recon'
-                      ? ['Lokasi','Artikel','Snap','1st','2nd','Final Qty','Diff','Status'].map(h => <th key={h}>{h}</th>)
-                      : ['Lokasi','Artikel','Deskripsi','Qty','Timestamp','Operator'].map(h => <th key={h}>{h}</th>)
-                  }
-                </tr>
-              </thead>
+  <tr>
+    {ccTab === 'snapshot_list'
+      ? ['Lokasi','Artikel','Qty Snap','Deskripsi'].map(h => <th key={h}>{h}</th>)
+      : ccTab === 'recon'
+        ? ['Lokasi','Artikel','Snap','1st','2nd','Final Qty','Diff','Status','1st By','2nd By'].map(h => <th key={h}>{h}</th>)
+        : ['Lokasi','Artikel','Deskripsi','Qty','Timestamp','Operator'].map(h => <th key={h}>{h}</th>)
+    }
+  </tr>
+</thead>
               <tbody>
                 {filteredData.map((r,i) => (
                   <tr key={i}>
@@ -449,7 +449,9 @@ export default function InventoryPage({ activeMenu, showToast }) {
                           return <span style={{fontWeight:800,color:d===0?'var(--green)':'var(--red)'}}>{d>0?`+${d}`:d}</span>;
                         })()}</td>
                         <td style={{fontSize:'0.6rem',color:'var(--muted)'}}>{r?.final_status}</td>
-                      </>
+                      <td style={{ fontSize: '0.6rem', textTransform: 'capitalize' }}>{r?.operator_1st || '-'}</td>
+          <td style={{ fontSize: '0.6rem', textTransform: 'capitalize' }}>{r?.operator_2nd || '-'}</td>
+        </>
                     ) : (
                       <>
                         <td className="mono">{r?.location_id}</td>
