@@ -89,10 +89,31 @@ export default function OutboundPage({ activeMenu, showToast }) {
   };
 
   const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(data);
+    let rows, filename, sheetName;
+
+    if (currentSubMenu === 'Explorer' && selectedHeader) {
+      // ── Detail picklist: export baris yang sudah difilter ──
+      rows      = data.filter(r => r.picklist_number === selectedHeader);
+      filename  = `Explorer_${selectedHeader}.xlsx`;
+      sheetName = selectedHeader;
+    } else if (currentSubMenu === 'Explorer') {
+      // ── List Explorer: export semua detail baris (data mentah) ──
+      rows      = data;
+      filename  = `Explorer_All.xlsx`;
+      sheetName = 'Explorer';
+    } else {
+      // ── Picking / Packing: export semua data ──
+      rows      = data;
+      filename  = `${currentSubMenu}.xlsx`;
+      sheetName = currentSubMenu;
+    }
+
+    if (!rows?.length) return showToast("Tidak ada data untuk diekspor", "error");
+    const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Data");
-    XLSX.writeFile(wb, `COOL_Outbound_${currentSubMenu}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, filename);
+    showToast(`Berhasil export ${rows.length} baris`);
   };
 
   // ── Data processing ──────────────────────────────────────────────
@@ -236,7 +257,7 @@ export default function OutboundPage({ activeMenu, showToast }) {
             </div>
           </div>
           {[
-            { l:'SKU',  v: selectedPicklistInfo.lines },
+            { l:'LINES',  v: selectedPicklistInfo.lines },
             { l:'REQ',  v: selectedPicklistInfo.totalQty },
             { l:'PICK', v: selectedPicklistInfo.qtyPicked, c:'var(--green)' },
             { l:'PACK', v: selectedPicklistInfo.qtyPacked, c:'var(--text)'  },

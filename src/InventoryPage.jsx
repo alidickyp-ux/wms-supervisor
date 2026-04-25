@@ -294,23 +294,43 @@ export default function InventoryPage({ activeMenu, showToast }) {
   };
 
   const handleExport = () => {
-    if (!data?.length) return showToast("Tidak ada data", "error");
-    const out = data.map(r => {
-      const n = { ...r };
-      ['scanned_at','timestamp'].forEach(k => { if (n[k]) n[k] = formatWIB(n[k]); });
-      if (ccTab === 'recon') {
-        const finalQty = Number(n.qty_2nd) > 0 ? Number(n.qty_2nd) : Number(n.qty_1st || 0);
-        n['final_qty'] = finalQty;
-        n['diff'] = finalQty - Number(n.qty_snap || 0);
-      }
-      return n;
+  if (!data?.length) return showToast("Tidak ada data", "error");
+
+  const out = data.map(r => {
+    if (ccTab === 'recon') {
+      // Logika Final Qty: Jika ada Qty 2nd, pakai itu. Jika tidak, pakai Qty 1st.
+      const finalQty = Number(r.qty_2nd) > 0 ? Number(r.qty_2nd) : Number(r.qty_1st || 0);
+      const diff = finalQty - Number(r.qty_snap || 0);
+
+      return {
+        'location_id': r.location_id,
+        'artikel': r.artikel,
+        'description': getDesc(r), // Fungsi pembantu deskripsi
+        'qty_snap': Number(r.qty_snap || 0),
+        'qty_1st': Number(r.qty_1st || 0),
+        'qty_2nd': Number(r.qty_2nd || 0),
+        'final_qty': finalQty,
+        'diff': diff,
+        'final_status': r.final_status,
+        '1stcount_by': r.operator_1st || '-', // Data dari MV baru
+        '2ndcount_by': r.operator_2nd || '-'  // Data dari MV baru
+      };
+    }
+
+    // Default untuk tab lain
+    const n = { ...r };
+    ['scanned_at', 'timestamp'].forEach(k => { 
+      if (n[k]) n[k] = formatWIB(n[k]); 
     });
-    const ws = XLSX.utils.json_to_sheet(out);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Data");
-    const label = activeMenu === 'Cycle Count' ? CC_TABS.find(t=>t.key===ccTab)?.label : activeMenu;
-    XLSX.writeFile(wb, `${label}.xlsx`);
-  };
+    return n;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(out);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Data");
+  const label = activeMenu === 'Cycle Count' ? CC_TABS.find(t => t.key === ccTab)?.label : activeMenu;
+  XLSX.writeFile(wb, `${label}.xlsx`);
+};
 
   const handleClear = async (target) => {
     if (!window.confirm("Hapus data?")) return;

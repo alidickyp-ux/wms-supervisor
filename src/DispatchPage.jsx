@@ -100,15 +100,17 @@ export default function DispatchPage({ activeMenu, showToast }) {
     const s = selectedHistSession;
 
     const confirmed  = histDetail.filter(r => r.handover_status === 'CONFIRMED').length;
-    const notFound   = histDetail.filter(r => r.handover_status === 'NOT_FOUND').length;
+    const notFound   = histDetail.filter(r => ['NOT_FOUND','DISCREPANCY'].includes(r.handover_status)).length;
     const cancelled  = histDetail.filter(r => r.handover_status === 'CANCELLED').length;
 
     const rows = histDetail.map((r,i) => {
       const status = r.handover_status || '-';
-      const color  = status === 'CONFIRMED' ? '#166534'
-                   : status === 'NOT_FOUND'  ? '#92400e' : '#991b1b';
-      const bg     = status === 'CONFIRMED' ? '#dcfce7'
-                   : status === 'NOT_FOUND'  ? '#fef3c7' : '#fee2e2';
+      const color  = status === 'CONFIRMED'    ? '#166534'
+                   : status === 'NOT_FOUND'   ? '#92400e'
+                   : status === 'DISCREPANCY' ? '#991b1b' : '#991b1b';
+      const bg     = status === 'CONFIRMED'    ? '#dcfce7'
+                   : status === 'NOT_FOUND'   ? '#fef3c7'
+                   : status === 'DISCREPANCY' ? '#fee2e2' : '#fee2e2';
       return `<tr style="background:${i%2===0?'#fff':'#f9fafb'}">
         <td style="text-align:center">${i+1}</td>
         <td style="font-family:monospace;font-size:11px">${r.tracking_reference||r.do_reference||'-'}</td>
@@ -284,7 +286,7 @@ export default function DispatchPage({ activeMenu, showToast }) {
             <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
               {[
                 ['CONFIRMED', 'tag-green', histDetail.filter(r=>r.handover_status==='CONFIRMED').length],
-                ['NOT FOUND',  'tag-amber', histDetail.filter(r=>r.handover_status==='NOT_FOUND').length],
+                ['NOT FOUND',  'tag-amber', histDetail.filter(r=>['NOT_FOUND','DISCREPANCY'].includes(r.handover_status)).length],
                 ['CANCELLED',  'tag-red',   histDetail.filter(r=>r.handover_status==='CANCELLED').length],
               ].map(([label,cls,count])=>(
                 <span key={label} className={`tag ${cls}`} style={{fontSize:'0.6rem',padding:'3px 10px'}}>
@@ -308,8 +310,10 @@ export default function DispatchPage({ activeMenu, showToast }) {
                       </td>
                       <td>
                         <span className={`tag ${
-                          r.handover_status==='CONFIRMED' ? 'tag-green'
-                          : r.handover_status==='NOT_FOUND' ? 'tag-amber' : 'tag-red'
+                          r.handover_status==='CONFIRMED'   ? 'tag-green'
+                          : r.handover_status==='NOT_FOUND' ? 'tag-amber'
+                          : r.handover_status==='DISCREPANCY' ? 'tag-red'
+                          : r.handover_status==='CANCELLED' ? 'tag-red' : 'tag-red'
                         }`}>{r.handover_status||'-'}</span>
                       </td>
                     </tr>
