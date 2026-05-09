@@ -379,29 +379,61 @@ export default function OutboundPage({ activeMenu, showToast }) {
             )}
 
             {/* EXPLORER DETAIL — tampil saat selectedHeader ada */}
-            {currentSubMenu==='Explorer' && selectedHeader && (
+            {currentSubMenu === 'Explorer' && selectedHeader && (
               <table className="data-table">
-                <thead><tr>
-                  {['SKU','Deskripsi','Req','Pick','Pack','Status'].map(h=><th key={h}>{h}</th>)}
-                </tr></thead>
+                <thead>
+                  <tr>
+                    {/* Menambahkan 'LOC' ke dalam array header */}
+                    {['SKU', 'Deskripsi', 'LOC', 'Req', 'Pick', 'Pack', 'Status'].map(h => (
+                      <th key={h}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
                 <tbody>
                   {filteredData.length === 0 && (
-                    <tr><td colSpan={6} style={{textAlign:'center',padding:32,color:'var(--muted2)'}}>
-                      Tidak ada data
-                    </td></tr>
+                    <tr>
+                      {/* Colspan diubah menjadi 7 karena penambahan kolom baru */}
+                      <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--muted2)' }}>
+                        Tidak ada data
+                      </td>
+                    </tr>
                   )}
-                  {filteredData.map((r,i)=>(
+                  {filteredData.map((r, i) => (
                     <tr key={i}>
-                      <td className="mono" style={{fontWeight:600}}>{r.sku||r.product_id}</td>
-                      <td className="muted-text" style={{maxWidth:200,overflow:'hidden',
-                        textOverflow:'ellipsis'}}>{getDesc(r)}</td>
+                      <td className="mono" style={{ fontWeight: 600 }}>{r.sku || r.product_id}</td>
+                      <td className="muted-text" style={{ 
+                        maxWidth: 200, 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis' 
+                      }}>
+                        {getDesc(r)}
+                      </td>
+
+                      {/* Kolom Lokasi / Bin */}
+                    <td className="mono" style={{ 
+                      fontSize: '0.75rem', 
+                      fontWeight: 700, 
+                      color: 'var(--text)' 
+                    }}>
+                      {/* Backend Anda menggunakan location_id dalam query SQL-nya */}
+                      {r.location_id || r.loc || r.bin || "-"}
+                    </td>
+
                       <td>{r.qty_req}</td>
-                      <td style={{color:Number(r.qty_picked)<Number(r.qty_req)?'var(--orange)':'var(--green)',
-                        fontWeight:700}}>{r.qty_picked}</td>
-                      <td style={{color:Number(r.qty_packed)<Number(r.qty_req)?'var(--orange)':'var(--green)',
-                        fontWeight:700}}>{r.qty_packed}</td>
+                      <td style={{ 
+                        color: Number(r.qty_picked) < Number(r.qty_req) ? 'var(--orange)' : 'var(--green)',
+                        fontWeight: 700 
+                      }}>
+                        {r.qty_picked}
+                      </td>
+                      <td style={{ 
+                        color: Number(r.qty_packed) < Number(r.qty_req) ? 'var(--orange)' : 'var(--green)',
+                        fontWeight: 700 
+                      }}>
+                        {r.qty_packed}
+                      </td>
                       <td>
-                        <span className={`tag ${r.status==='packed'?'tag-green':'tag-amber'}`}>
+                        <span className={`tag ${r.status === 'packed' || r.status === 'completed' ? 'tag-green' : 'tag-amber'}`}>
                           {r.status?.toUpperCase()}
                         </span>
                       </td>
